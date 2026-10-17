@@ -1,0 +1,761 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>스틱노트</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen practice instrument. A manuscript strip on top, two gum-rubber practice pads below. */
+:root{
+  --bg:#E8ECF0; --sheet:#FAFBFC; --ink:#162030; --muted:#5A6576; --rule:#C4CCD7; --chip:#DAE0E8;
+  --R:#B0640F; --L:#2A65A0; --ok:#5AAE22; --bad:#D63A2F;
+  --pad:#2E333B; --pad-hi:#4B525D; --R-pad:#F2A64B; --L-pad:#72B2EF;
+  --f-display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1219; --sheet:#141B25; --ink:#E4E9F0; --muted:#8F9BAE; --rule:#334055; --chip:#1D2633;
+  --R:#E9A04B; --L:#66A6E2; --ok:#8BD64F; --bad:#FF5E52;
+  --pad:#222831; --pad-hi:#3B4350; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0D1219; --sheet:#141B25; --ink:#E4E9F0; --muted:#8F9BAE; --rule:#334055; --chip:#1D2633;
+  --R:#E9A04B; --L:#66A6E2; --ok:#8BD64F; --bad:#FF5E52;
+  --pad:#222831; --pad-hi:#3B4350; color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{background:var(--bg);color:var(--ink);font:14px/1.4 var(--f-body);overflow:hidden;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--L);outline-offset:2px}
+
+#app{height:100%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;gap:8px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px 10px}
+
+.bar{display:flex;align-items:center;gap:10px}
+.brand{font-family:var(--f-display);font-weight:800;font-stretch:78%;font-size:19px;letter-spacing:.01em;white-space:nowrap}
+.brand i{font-style:normal;color:var(--R)}
+.brand i+i{color:var(--L)}
+.tabs{display:flex;flex:1;min-width:0;background:var(--chip);border-radius:10px;padding:3px;gap:2px}
+.tabs button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:500;font-size:13px;padding:7px 2px;border-radius:8px;cursor:pointer;white-space:nowrap}
+.tabs button[aria-selected="true"]{background:var(--sheet);color:var(--ink);font-weight:700;box-shadow:0 1px 2px rgb(0 0 0 / .14)}
+
+.controls{display:flex;flex-direction:column;gap:6px}
+.row{display:flex;align-items:center;gap:6px;min-width:0}
+.btn,select{height:36px;border:1px solid var(--rule);background:var(--sheet);border-radius:9px;padding:0 10px;font-weight:500;cursor:pointer}
+select{min-width:0}
+.grow{flex:1;min-width:0}
+.btn.sq{width:36px;padding:0;font-family:var(--f-display);font-weight:700;font-size:18px;flex:none}
+.btn:active{transform:translateY(1px)}
+.lbl{font-size:12px;color:var(--muted);white-space:nowrap}
+.num{font-family:var(--f-display);font-weight:700;font-variant-numeric:tabular-nums;min-width:4.2ch;text-align:center}
+.info{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.tempo{display:flex;align-items:center;gap:4px}
+.bpm{font-family:var(--f-display);font-weight:800;font-stretch:90%;font-size:27px;line-height:1;font-variant-numeric:tabular-nums;min-width:2.6ch;text-align:center}
+.unit{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.play{margin-left:auto;background:var(--ink);border-color:var(--ink);color:var(--sheet);font-weight:700;min-width:76px;flex:none}
+.play.on{background:var(--bad);border-color:var(--bad);color:#fff}
+.vh{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+input[type=range]{accent-color:var(--L);min-width:0}
+
+.score{flex:1;min-height:0;position:relative;background:var(--sheet);border:1px solid var(--rule);border-radius:12px;overflow:auto;padding-top:8px}
+.cap{display:flex;justify-content:space-between;gap:8px;padding:0 12px;font-size:12px;color:var(--muted)}
+.cap b{color:var(--ink);font-size:13px}
+#staff{display:block}
+.st{stroke:var(--ink);stroke-width:1.2}
+.bl{stroke:var(--ink);stroke-width:1.3}
+.ts{font:800 16px var(--f-display);fill:var(--ink);text-anchor:middle}
+.head,.beam,.flag,.rest-dot,.dot{fill:var(--ink)}
+.stem{stroke:var(--ink);stroke-width:1.4}
+.rest{stroke:var(--ink);fill:none;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.rest.thin{stroke-width:1.5}
+.acc{stroke:var(--ink);fill:none;stroke-width:1.5;stroke-linecap:round}
+.tup{font:italic 700 11px var(--f-display);fill:var(--muted);text-anchor:middle}
+.stk{font:800 14px var(--f-display);text-anchor:middle}
+.note.R .stk{fill:var(--R)}
+.note.L .stk{fill:var(--L)}
+.note .head,.note .stk{transition:fill .15s}
+.note.ok .head,.note.ok .stk,.note.ok .dot{fill:var(--ok)}
+.note.ok .stem{stroke:var(--ok)}
+.note.bad .head,.note.bad .stk,.note.bad .dot{fill:var(--bad)}
+.note.bad .stem{stroke:var(--bad)}
+.cursor{fill:var(--L);opacity:.28}
+.overlay{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;font:900 76px/1 var(--f-display);color:var(--ink);text-shadow:0 0 18px var(--sheet)}
+.overlay.msg{font:600 15px/1.5 var(--f-body);text-align:center;padding:24px;background:color-mix(in srgb,var(--sheet) 88%,transparent)}
+.toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);background:var(--ink);color:var(--sheet);padding:7px 12px;border-radius:8px;font-size:13px;white-space:nowrap;max-width:92%;overflow:hidden;text-overflow:ellipsis}
+
+.pads{flex:0 0 clamp(180px,37%,340px);display:flex;gap:10px;position:relative}
+.pad{flex:1;min-width:0;border:0;background:transparent;padding:0;display:grid;place-items:center;cursor:pointer;
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;container-type:size}
+.pad.L{--ring:var(--L-pad)}
+.pad.R{--ring:var(--R-pad)}
+.disc{width:140px;width:min(96cqw,96cqh);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;align-content:center;gap:0;
+  background:radial-gradient(circle at 50% 40%,var(--pad-hi),var(--pad) 66%);
+  box-shadow:inset 0 0 0 7px var(--ring),inset 0 0 0 9px rgb(0 0 0 / .35),0 6px 14px rgb(0 0 0 / .22);
+  transition:transform .06s,box-shadow .12s}
+.disc b{font:900 56px/1 var(--f-display);font-stretch:85%;color:var(--ring)}
+.disc small{font-size:12px;color:#C9D0DA;margin-top:2px}
+.pad.next .disc{box-shadow:inset 0 0 0 7px var(--ring),0 0 0 3px var(--ring),0 0 28px 6px color-mix(in srgb,var(--ring) 55%,transparent)}
+.pad.hit .disc{transform:scale(.96)}
+.pad.okf .disc{box-shadow:inset 0 0 0 7px var(--ok),0 0 0 4px color-mix(in srgb,var(--ok) 45%,transparent)}
+.pad.badf .disc{box-shadow:inset 0 0 0 7px var(--bad),0 0 0 4px color-mix(in srgb,var(--bad) 45%,transparent)}
+
+.result{position:absolute;inset:0;z-index:2;background:var(--sheet);border:1px solid var(--rule);border-radius:12px;padding:14px 16px;display:flex;flex-direction:column;gap:8px;overflow:auto}
+.res-top{display:flex;align-items:baseline;gap:10px}
+.res-score{font:900 46px/1 var(--f-display);font-variant-numeric:tabular-nums}
+.res-score small{font-size:20px;margin-left:2px}
+.res-head{font-weight:700;font-size:15px}
+.res-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
+.res-list b{color:var(--bad)}
+.res-counts{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.res-actions{margin-top:auto;display:flex;gap:8px}
+.res-actions .btn{flex:1}
+.res-actions .btn.primary{background:var(--ink);border-color:var(--ink);color:var(--sheet);font-weight:700}
+
+.sheet-back{position:fixed;inset:0;z-index:10;background:rgb(0 0 0 / .4);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:560px;max-height:90%;overflow:auto;background:var(--sheet);border-radius:16px 16px 0 0;display:flex;flex-direction:column;gap:12px;
+  padding-top:16px;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px));
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.sheet-head{display:flex;justify-content:space-between;align-items:center}
+.sheet h2{margin:0;font-size:17px}
+.tg{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.tg input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--L);flex:none}
+.tg small,.lat small{display:block;color:var(--muted);font-size:12px}
+.lat{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--rule);padding-top:12px}
+.lat div{display:flex;justify-content:space-between}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="bar">
+    <div class="brand"><i>L</i><i>R</i> 스틱노트</div>
+    <nav class="tabs" role="tablist" aria-label="연습 모드">
+      <button role="tab" data-mode="rudiment" aria-selected="true">루디먼트</button>
+      <button role="tab" data-mode="read" aria-selected="false">초견</button>
+      <button role="tab" data-mode="song" aria-selected="false">내 노래</button>
+    </nav>
+    <button class="btn sq" id="btnSettings" aria-label="설정">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><g stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"><path d="M2 4.5h14M2 9h14M2 13.5h14"/></g><g fill="currentColor"><circle cx="6" cy="4.5" r="2.2"/><circle cx="12" cy="9" r="2.2"/><circle cx="7.5" cy="13.5" r="2.2"/></g></svg>
+    </button>
+  </header>
+
+  <section class="controls">
+    <div class="row" id="rowRudiment"><select id="selRudiment" class="grow" aria-label="루디먼트"></select></div>
+    <div class="row" id="rowRead" hidden>
+      <select id="selLevel" class="grow" aria-label="초견 레벨"></select>
+      <button class="btn" id="btnNew">새 패턴</button>
+    </div>
+    <div class="row" id="rowSong" hidden>
+      <label class="btn" for="fileSong" style="display:grid;place-items:center">노래 선택</label>
+      <input type="file" id="fileSong" accept="audio/*" class="vh">
+      <button class="btn" id="btnDemo">예시 비트</button>
+      <span class="info" id="songInfo">파일은 이 기기 안에서만 재생돼요</span>
+    </div>
+    <div class="row" id="rowSongAdj" hidden>
+      <span class="lbl">곡 BPM</span>
+      <button class="btn sq" id="sbDown" aria-label="곡 BPM 내리기">−</button>
+      <output class="num" id="sbOut">—</output>
+      <button class="btn sq" id="sbUp" aria-label="곡 BPM 올리기">+</button>
+      <button class="btn" id="sbHalf" style="padding:0 8px">½</button>
+      <button class="btn" id="sbDbl" style="padding:0 8px">×2</button>
+      <span class="lbl" style="margin-left:auto">첫 박</span>
+      <button class="btn sq" id="offPrev" aria-label="첫 박을 한 박 앞으로">‹</button>
+      <button class="btn sq" id="offNext" aria-label="첫 박을 한 박 뒤로">›</button>
+    </div>
+    <div class="row" id="rowSongPos" hidden>
+      <span class="lbl">시작</span>
+      <input type="range" id="songStart" class="grow" min="0" max="0" step="1" value="0" aria-label="시작 위치">
+      <output class="num" id="songStartOut">0:00</output>
+      <span class="lbl">싱크</span>
+      <button class="btn sq" id="nudgeL" aria-label="박자 10ms 당기기">−</button>
+      <button class="btn sq" id="nudgeR" aria-label="박자 10ms 밀기">+</button>
+    </div>
+    <div class="row" id="rowTempo">
+      <div class="tempo" id="bpmBox">
+        <button class="btn sq" id="bpmDown" aria-label="5 BPM 느리게">−</button>
+        <output class="bpm" id="bpmOut">80</output><span class="unit">bpm</span>
+        <button class="btn sq" id="bpmUp" aria-label="5 BPM 빠르게">+</button>
+      </div>
+      <select id="selReps" aria-label="반복 횟수">
+        <option value="1">1회</option><option value="2" selected>2회</option><option value="4">4회</option><option value="8">8회</option><option value="0">계속</option>
+      </select>
+      <select id="selSongPat" class="grow" aria-label="노래 위에 칠 패턴" hidden></select>
+      <button class="btn sq" id="btnNew2" aria-label="새 패턴" hidden>↻</button>
+      <select id="selRate" aria-label="재생 속도" hidden></select>
+      <button class="btn play" id="btnPlay">시작</button>
+    </div>
+  </section>
+
+  <section class="score" id="score" aria-label="악보">
+    <div class="cap"><b id="patName"></b><span id="patMeta"></span></div>
+    <svg id="staff" role="img" aria-label="드럼 악보"></svg>
+    <div class="overlay" id="overlay" hidden></div>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </section>
+
+  <section class="pads">
+    <button class="pad L" id="padL" aria-label="왼손 패드 (키보드 F)"><span class="disc"><b>L</b><small>왼손</small></span></button>
+    <button class="pad R" id="padR" aria-label="오른손 패드 (키보드 J)"><span class="disc"><b>R</b><small>오른손</small></span></button>
+    <div class="result" id="result" hidden></div>
+  </section>
+</div>
+
+<div class="sheet-back" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head"><h2 id="sheetTitle">연습 설정</h2><button class="btn" id="sheetClose">닫기</button></div>
+    <label class="tg"><input type="checkbox" id="optMetro"><span>메트로놈 클릭<small>시작 전 카운트 4번은 항상 들려요</small></span></label>
+    <label class="tg"><input type="checkbox" id="optGuide"><span>패턴 소리 같이 듣기<small>쳐야 할 음을 앱이 작게 같이 쳐줘요</small></span></label>
+    <label class="tg"><input type="checkbox" id="optHint"><span>다음 손 힌트<small>다음에 칠 패드가 빛나요</small></span></label>
+    <label class="tg"><input type="checkbox" id="optSpeed"><span>스피드 빌더<small>정확도 90% 이상이면 다음 연습은 +5 BPM</small></span></label>
+    <div class="lat">
+      <div><b>터치 지연 보정</b><output id="latOut" class="num">40ms</output></div>
+      <input type="range" id="latRange" min="-50" max="300" step="5" aria-label="지연 보정 값">
+      <button class="btn" id="btnCalib">클릭 듣고 자동 보정</button>
+      <small>폰마다 화면을 누르고 소리가 나기까지 걸리는 시간이 달라요. 박자에 맞게 쳤는데도 계속 '늦음'으로 나오면 보정하세요.</small>
+    </div>
+  </div>
+</div>
+
+<script>
+(()=>{
+'use strict';
+const $=s=>document.querySelector(s);
+const r1=v=>Math.round(v*10)/10;
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const store={
+  get(k,d){try{const v=localStorage.getItem('sticknote.'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem('sticknote.'+k,JSON.stringify(v))}catch(e){}}
+};
+
+const S={mode:'rudiment',bpm:store.get('bpm',80),reps:2,
+  metro:store.get('metro',true),guide:store.get('guide',false),hint:store.get('hint',true),
+  speedup:store.get('speedup',false),lat:store.get('lat',0.04)};
+
+/* ---------- 패턴 ---------- */
+// cyc: 한 사이클의 스티킹('-'는 쉼표), sub: 한 박을 몇 칸으로 나누는지
+const RUD=[
+  {id:'single8', name:'싱글 스트로크 · 8분', sub:2, cyc:'RL', acc:[]},
+  {id:'single16',name:'싱글 스트로크 · 16분',sub:4, cyc:'RL', acc:[]},
+  {id:'double',  name:'더블 스트로크',        sub:4, cyc:'RRLL', acc:[]},
+  {id:'para',    name:'싱글 패러디들',        sub:4, cyc:'RLRRLRLL', acc:[0,4]},
+  {id:'dblpara', name:'더블 패러디들',        sub:3, cyc:'RLRLRRLRLRLL', acc:[0,6]},
+  {id:'pdd',     name:'패러디들디들',         sub:3, cyc:'RLRRLL', acc:[0]},
+  {id:'trip',    name:'셋잇단 싱글',          sub:3, cyc:'RLRLRL', acc:[0,3]},
+  {id:'five',    name:'5스트로크 롤',         sub:4, cyc:'RRLLR---LLRRL---', acc:[4,12]},
+];
+const LV=[
+  {id:1,name:'Lv1 · 4분음표',         sub:1,p:.75,stick:'alt'},
+  {id:2,name:'Lv2 · 8분음표',         sub:2,p:.7, stick:'nat'},
+  {id:3,name:'Lv3 · 16분음표',        sub:4,p:.6, stick:'nat'},
+  {id:4,name:'Lv4 · 16분 스티킹 섞기', sub:4,p:1,  stick:'mix'},
+  {id:5,name:'Lv5 · 셋잇단',          sub:3,p:.7, stick:'alt'},
+];
+const SUBNAME={1:'4분음표',2:'8분음표',3:'셋잇단',4:'16분음표'};
+const BARS=2;
+
+function buildRud(id){
+  const r=RUD.find(x=>x.id===id)||RUD[0], n=BARS*4*r.sub, slots=[];
+  for(let j=0;j<n;j++){const c=r.cyc[j%r.cyc.length];slots.push(c==='-'?null:{h:c,acc:r.acc.includes(j%r.cyc.length)})}
+  return {name:r.name,sub:r.sub,bars:BARS,slots};
+}
+function genPattern(id){
+  const L=LV.find(x=>x.id===id)||LV[0], sub=L.sub, n=BARS*4*sub;
+  let slots=[];
+  for(let t=0;t<40;t++){
+    slots=[];
+    for(let j=0;j<n;j++){const p=L.p*(j%sub===0?1.15:0.92);slots.push(Math.random()<p?{h:'R',acc:false}:null)}
+    if(!slots[0])slots[0]={h:'R',acc:false};
+    const c=slots.filter(Boolean).length;
+    if(L.p>=1||(c>=n*L.p*0.85&&c<n))break;
+  }
+  if(L.stick==='alt'){let h='R';slots.forEach(s=>{if(s){s.h=h;h=h==='R'?'L':'R'}})}
+  else if(L.stick==='nat'){slots.forEach((s,j)=>{if(s)s.h=(j%sub)%2===0?'R':'L'})}
+  else{
+    const G=['RLRL','RRLL','RLRR','RLLR','LRLL','RRLR','LRRL','LLRR','RLRL'];
+    for(let b=0;b<BARS*4;b++){const g=G[Math.floor(Math.random()*G.length)];for(let k=0;k<4;k++)slots[b*4+k]={h:g[k],acc:k===0&&Math.random()<.3}}
+  }
+  return {name:L.name+' (자동 생성)',sub,bars:BARS,slots};
+}
+
+const cur={pattern:null,notes:[],slotNote:[]};
+function setPattern(P){
+  hideResult();
+  cur.pattern=P;cur.notes=[];cur.slotNote=new Array(P.slots.length).fill(-1);
+  P.slots.forEach((s,j)=>{if(s){cur.slotNote[j]=cur.notes.length;
+    cur.notes.push({i:cur.notes.length,j,pos:j/P.sub,h:s.h,acc:s.acc,bar:Math.floor(j/(4*P.sub)),beat:Math.floor(j/P.sub)%4})}});
+  $('#patName').textContent=P.name;
+  $('#patMeta').textContent=`${SUBNAME[P.sub]} · 4/4 · ${P.bars}마디 반복`;
+  renderStaff();
+}
+
+/* ---------- 악보 그리기 ---------- */
+let geo=[],noteEls=[],curEls=[];
+function restGlyph(t,x,y){
+  if(t==='q')return `<path class="rest" d="M${r1(x-2)} ${y-13} L${r1(x+3)} ${y-7} L${r1(x-1)} ${y-2} L${r1(x+4)} ${y+4} Q${r1(x-3)} ${y+2} ${r1(x+1)} ${y+9}"/>`;
+  if(t==='e')return `<circle class="rest-dot" cx="${r1(x-2)}" cy="${y-5}" r="2.4"/><path class="rest thin" d="M${r1(x-2)} ${y-3.5} Q${r1(x+1)} ${y-3} ${r1(x+4)} ${y-7} L${r1(x)} ${y+7}"/>`;
+  return `<circle class="rest-dot" cx="${r1(x-1)}" cy="${y-7}" r="2.2"/><circle class="rest-dot" cx="${r1(x-3)}" cy="${y-1}" r="2.2"/><path class="rest thin" d="M${r1(x-1)} ${y-5.5} Q${r1(x+2)} ${y-5} ${r1(x+5)} ${y-9} L${r1(x-1)} ${y+9} M${r1(x-3)} ${y+0.5} Q${r1(x)} ${y+1} ${r1(x+3)} ${y-3}"/>`;
+}
+function flagPath(sx,top,c){
+  let s='';
+  for(let f=0;f<c;f++){const y=top+f*7;
+    s+=`<path class="flag" d="M${r1(sx)} ${y} C${r1(sx+1)} ${y+6} ${r1(sx+9)} ${y+8} ${r1(sx+7)} ${y+17} C${r1(sx+6)} ${y+11} ${r1(sx+3)} ${y+9} ${r1(sx)} ${y+7} Z"/>`}
+  return s;
+}
+const REST_TABLE={4:{1:[['s',0]],2:[['e',0]],3:[['e',0],['s',2]]},2:{1:[['e',0]]},3:{1:[['e',0]],2:[['e',0],['e',1]]},1:{}};
+function renderBeat(P,bar,beat,xOf,lineY){
+  const sub=P.sub,base=(bar*4+beat)*sub,sl=P.slots.slice(base,base+sub),stemTop=lineY-34;
+  const xs=k=>xOf((base+k)/sub);
+  const hits=[];sl.forEach((s,k)=>{if(s)hits.push(k)});
+  let h='';
+  if(!hits.length)return restGlyph('q',xs(0)+6,lineY);
+  (REST_TABLE[sub][hits[0]]||[]).forEach(([t,k])=>{h+=restGlyph(t,xs(k),lineY)});
+  // 같은 박 안에서 다음 음까지가 음표 길이 (드럼 악보 표기 관례)
+  const items=hits.map((k,idx)=>{
+    const dur=(idx<hits.length-1?hits[idx+1]:sub)-k;let beams=0,dot=false;
+    if(sub===2||sub===3)beams=dur===1?1:0;
+    else if(sub===4){beams=dur===1?2:dur===4?0:1;dot=dur===3}
+    const x=xs(k);return {x,sx:x+5.2,beams,dot,s:sl[k],n:cur.slotNote[base+k]};
+  });
+  items.forEach(it=>{
+    const x=r1(it.x),sx=r1(it.sx);
+    h+=`<g class="note ${it.s.h}" data-i="${it.n}"><ellipse class="head" cx="${x}" cy="${lineY}" rx="5.6" ry="4.1" transform="rotate(-20 ${x} ${lineY})"/>`+
+       `<line class="stem" x1="${sx}" x2="${sx}" y1="${lineY-1.5}" y2="${stemTop}"/>`+
+       (it.dot?`<circle class="dot" cx="${r1(it.x+10)}" cy="${lineY-3}" r="1.7"/>`:'')+
+       `<text class="stk" x="${x}" y="${lineY+27}">${it.s.h}</text></g>`;
+    if(it.s.acc){const ay=stemTop-9;h+=`<path class="acc" d="M${r1(it.x-4)} ${ay-3.5} L${r1(it.x+5)} ${ay} L${r1(it.x-4)} ${ay+3.5}"/>`}
+  });
+  const rect=(a,b,y)=>`<rect class="beam" x="${r1(a)}" y="${y}" width="${r1(b-a)}" height="4.4"/>`;
+  let grp=[];
+  const flush=()=>{
+    if(grp.length===1)h+=flagPath(grp[0].sx,stemTop,grp[0].beams);
+    else if(grp.length>1){
+      h+=rect(grp[0].sx-.7,grp[grp.length-1].sx+.7,stemTop);
+      grp.forEach((it,q)=>{
+        if(it.beams<2)return;const nx=grp[q+1],pv=grp[q-1];
+        if(nx&&nx.beams>=2)h+=rect(it.sx-.7,nx.sx+.7,stemTop+7);
+        else if(!(pv&&pv.beams>=2))h+=q===grp.length-1?rect(it.sx-7,it.sx+.7,stemTop+7):rect(it.sx-.7,it.sx+7,stemTop+7);
+      });
+    }
+    grp=[];
+  };
+  items.forEach(it=>{if(it.beams>0)grp.push(it);else flush()});flush();
+  if(sub===3)h+=`<text class="tup" x="${r1(xs(1)+5)}" y="${stemTop-4}">3</text>`;
+  return h;
+}
+function renderStaff(){
+  const P=cur.pattern,svg=$('#staff');
+  const W=Math.max(280,Math.floor($('#score').clientWidth)-2),sysH=92,H=sysH*P.bars+4;
+  let h='';geo=[];
+  for(let b=0;b<P.bars;b++){
+    const lineY=b*sysH+52,left=b===0?36:12,right=W-12,i0=left+18,i1=right-22;
+    const xOf=pos=>i0+(pos-b*4)/4*(i1-i0);
+    geo.push({lineY,xOf});
+    h+=`<rect class="cursor" id="cur${b}" x="0" y="${lineY-42}" width="3" height="80" visibility="hidden"/>`;
+    h+=`<line class="st" x1="12" x2="${right}" y1="${lineY}" y2="${lineY}"/>`;
+    if(b===0)h+=`<text class="ts" x="23" y="${lineY-3}">4</text><text class="ts" x="23" y="${lineY+15}">4</text>`;
+    else h+=`<line class="bl" x1="12" x2="12" y1="${lineY-12}" y2="${lineY+12}"/>`;
+    if(b===P.bars-1){ // 반복 기호: 이 마디들을 계속 돌아요
+      h+=`<circle class="dot" cx="${right-10}" cy="${lineY-6}" r="1.8"/><circle class="dot" cx="${right-10}" cy="${lineY+6}" r="1.8"/>`+
+         `<line class="bl" x1="${right-5}" x2="${right-5}" y1="${lineY-12}" y2="${lineY+12}"/><rect class="beam" x="${right-3}" y="${lineY-12}" width="3" height="24"/>`;
+    }else h+=`<line class="bl" x1="${right}" x2="${right}" y1="${lineY-12}" y2="${lineY+12}"/>`;
+    for(let beat=0;beat<4;beat++)h+=renderBeat(P,b,beat,xOf,lineY);
+  }
+  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('width',W);svg.setAttribute('height',H);
+  svg.innerHTML=h;
+  noteEls=cur.notes.map(n=>svg.querySelector(`g.note[data-i="${n.i}"]`));
+  curEls=geo.map((g,b)=>svg.querySelector('#cur'+b));
+}
+function paint(e){const el=noteEls[e.i];if(!el)return;el.classList.toggle('ok',e.st==='ok');el.classList.toggle('bad',e.st==='bad')}
+function clearPaint(){noteEls.forEach(el=>el&&el.classList.remove('ok','bad'))}
+function moveCursor(b,x){curEls.forEach((el,i)=>{if(!el)return;if(i===b){el.setAttribute('x',r1(x-1.5));el.setAttribute('visibility','visible')}else el.setAttribute('visibility','hidden')})}
+function hideCursors(){curEls.forEach(el=>el&&el.setAttribute('visibility','hidden'))}
+
+/* ---------- 소리 ---------- */
+let ctx=null,master=null,songGain=null,noiseBuf=null;
+function ensureAudio(){
+  if(!ctx){
+    const AC=window.AudioContext||window.webkitAudioContext;
+    ctx=new AC({latencyHint:'interactive'});
+    master=ctx.createGain();master.gain.value=0.9;master.connect(ctx.destination);
+    songGain=ctx.createGain();songGain.gain.value=0.85;songGain.connect(master);
+    noiseBuf=ctx.createBuffer(1,Math.floor(ctx.sampleRate*.3),ctx.sampleRate);
+    const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  }
+  if(ctx.state!=='running')ctx.resume();
+}
+function outFor(pan){if(ctx.createStereoPanner){const p=ctx.createStereoPanner();p.pan.value=pan;p.connect(master);return p}return master}
+function playHit(t,hand,vol,soft){
+  const out=outFor(hand==='L'?-.35:.35);
+  const g=ctx.createGain();g.connect(out);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+(soft?.08:.14));
+  const ns=ctx.createBufferSource();ns.buffer=noiseBuf;
+  const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=soft?3200:(hand==='L'?2100:2400);bp.Q.value=.9;
+  ns.connect(bp);bp.connect(g);ns.start(t);ns.stop(t+.16);
+  if(!soft){
+    const o=ctx.createOscillator(),og=ctx.createGain();o.type='triangle';
+    o.frequency.setValueAtTime(hand==='L'?240:262,t);o.frequency.exponentialRampToValueAtTime(140,t+.06);
+    og.gain.setValueAtTime(vol*.8,t);og.gain.exponentialRampToValueAtTime(.001,t+.08);
+    o.connect(og);og.connect(out);o.start(t);o.stop(t+.09);
+  }
+}
+function playClick(t,acc){
+  const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=acc?1760:1180;
+  g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(acc?.42:.3,t+.002);g.gain.exponentialRampToValueAtTime(.0001,t+.05);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+.06);
+}
+
+/* ---------- 노래 박자 분석 ---------- */
+function analyze(buf){
+  const sr=buf.sampleRate,hop=Math.round(sr*.005),hopS=hop/sr;
+  const c0=buf.getChannelData(0),c1=buf.numberOfChannels>1?buf.getChannelData(1):null;
+  const n=Math.floor(Math.min(buf.length,sr*120)/hop);
+  const E=new Float32Array(n),EL=new Float32Array(n),on=new Float32Array(n),lo=new Float32Array(n);
+  const a=1-Math.exp(-2*Math.PI*150/sr);let y=0,mE=0,mL=0;
+  for(let f=0;f<n;f++){
+    let s=0,sl=0;const st=f*hop;
+    for(let k=0;k<hop;k++){let x=c0[st+k];if(c1)x=(x+c1[st+k])*.5;s+=x*x;y+=a*(x-y);sl+=y*y}
+    E[f]=s;EL[f]=sl;mE+=s;mL+=sl;
+  }
+  mE=mE/n*.05+1e-12;mL=mL/n*.05+1e-12;
+  // 곡 전체 음량 대비로 압축한 에너지가 갑자기 커지는 지점 = 타격 지점
+  for(let f=1;f<n;f++){
+    on[f]=Math.max(0,Math.log1p(E[f]/mE)-Math.log1p(E[f-1]/mE));
+    lo[f]=Math.max(0,Math.log1p(EL[f]/mL)-Math.log1p(EL[f-1]/mL));
+  }
+  // 1) 자기상관으로 대략적인 템포
+  const minLag=Math.floor(60/200/hopS),maxLag=Math.ceil(60/60/hopS);
+  let bestLag=minLag,bestV=-1;
+  for(let lag=minLag;lag<=maxLag;lag++){
+    let s=0;for(let f=lag;f<n;f++)s+=on[f]*on[f-lag];
+    const bpm=60/(lag*hopS),w=Math.exp(-.5*Math.pow(Math.log2(bpm/120)/.8,2));
+    if(s*w>bestV){bestV=s*w;bestLag=lag}
+  }
+  // 2) 2배·절반·3:2 후보까지 박 격자를 미세하게 맞춰보고, 박 위치의 평균 세기가 가장 큰 템포를 고르기
+  const coarse=60/(bestLag*hopS),cands=[];
+  [1,2,.5,1.5,2/3,4/3,.75].forEach(m=>{const b=coarse*m;if(b>=70&&b<=180&&!cands.some(c=>Math.abs(c/b-1)<.03))cands.push(b)});
+  let best=null;
+  for(const c of cands){
+    let cb={s:-1};
+    for(let b=c*.97;b<=c*1.03;b+=.05){
+      const P=60/b/hopS;
+      for(let ph=0;ph<P;ph+=1){
+        let s=0,cnt=0;for(let x=ph;x<n-1;x+=P){const i=Math.round(x);s+=on[i]+.5*((on[i-1]||0)+on[i+1]);cnt++}
+        s/=cnt||1;if(s>cb.s)cb={s,b,ph,P};
+      }
+    }
+    cb.score=cb.s*Math.exp(-.5*Math.pow(Math.log2(cb.b/115)/.9,2));
+    if(!best||cb.score>best.score)best=cb;
+  }
+  if(!best)best={b:120,ph:0,P:60/120/hopS};
+  // 3) 저음(킥)이 가장 강한 박을 1박으로
+  let bj=0,bs=-1;
+  for(let j=0;j<4;j++){let s=0;for(let x=best.ph+j*best.P;x<n;x+=4*best.P)s+=lo[Math.round(x)]||0;if(s>bs){bs=s;bj=j}}
+  return {bpm:Math.round(best.b*10)/10,off:(best.ph+bj*best.P)*hopS};
+}
+async function makeDemo(){
+  const sr=44100,bpm=96,spb=60/bpm,intro=.42,bars=24,dur=intro+bars*4*spb+1;
+  const oc=new OfflineAudioContext(2,Math.ceil(sr*dur),sr);
+  const nb=oc.createBuffer(1,sr,sr),d=nb.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  const env=(t,v,len)=>{const g=oc.createGain();g.gain.setValueAtTime(v,t);g.gain.exponentialRampToValueAtTime(.001,t+len);g.connect(oc.destination);return g};
+  const kick=t=>{const o=oc.createOscillator();o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(42,t+.13);o.connect(env(t,.95,.32));o.start(t);o.stop(t+.33)};
+  const noise=(t,v,len,type,f)=>{const s=oc.createBufferSource();s.buffer=nb;const fl=oc.createBiquadFilter();fl.type=type;fl.frequency.value=f;s.connect(fl);fl.connect(env(t,v,len));s.start(t);s.stop(t+len+.01)};
+  const snare=t=>{noise(t,.5,.18,'highpass',1300);const o=oc.createOscillator();o.frequency.value=190;o.connect(env(t,.3,.08));o.start(t);o.stop(t+.09)};
+  const bass=(t,f,len)=>{const o=oc.createOscillator();o.type='sawtooth';o.frequency.value=f;const lp=oc.createBiquadFilter();lp.type='lowpass';lp.frequency.value=380;o.connect(lp);lp.connect(env(t,.22,len));o.start(t);o.stop(t+len+.01)};
+  const roots=[55,55,43.65,49];
+  for(let b=0;b<bars;b++)for(let q=0;q<4;q++){
+    const t=intro+(b*4+q)*spb;
+    if(q===0||q===2)kick(t);if(q===2)kick(t+spb*.5);
+    if(q===1||q===3)snare(t);
+    noise(t,.16,.04,'highpass',7000);noise(t+spb/2,.08,.035,'highpass',7000);
+    bass(t,roots[b%4],spb*.85);
+  }
+  return oc.startRendering();
+}
+
+/* ---------- 노래 ---------- */
+const song={buf:null,name:'',bpm:0,off:0,rate:1,startAt:0};
+const fmtT=s=>`${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;
+function normOff(){const bar=240/song.bpm;song.off=((song.off%bar)+bar)%bar}
+function setSong(buf,name){
+  song.buf=buf;song.name=name;
+  const a=analyze(buf);song.bpm=a.bpm;song.off=a.off;song.startAt=0;
+  $('#songStart').max=Math.max(0,Math.floor(buf.duration-10));$('#songStart').value=0;
+  songUI();applyMode();
+  toast(`박자를 찾았어요: ${song.bpm} BPM. 시작 눌러서 클릭이 맞는지 들어보세요`);
+}
+function songUI(){
+  if(song.buf){
+    $('#songInfo').textContent=`${song.name} · ${song.bpm.toFixed(1)} BPM · 첫 박 ${song.off.toFixed(2)}초`;
+    $('#sbOut').textContent=song.bpm.toFixed(1);
+  }
+  $('#songStartOut').textContent=fmtT(song.startAt);
+  const sel=$('#selRate'),v=sel.value||'100';
+  sel.innerHTML=[50,60,70,80,90,100].map(p=>`<option value="${p}">${p}%${song.buf?' · '+Math.round(song.bpm*p/100):''}</option>`).join('');
+  sel.value=v;song.rate=+sel.value/100;
+}
+
+/* ---------- 연습 실행 ---------- */
+let run=null,calib=null,wake=null;
+async function requestWake(){try{if(navigator.wakeLock)wake=await navigator.wakeLock.request('screen')}catch(e){}}
+function releaseWake(){try{if(wake)wake.release()}catch(e){}wake=null}
+
+function startRun(){
+  ensureAudio();hideResult();
+  const P=cur.pattern,notes=cur.notes,N=notes.length;if(!N)return;
+  const startCtx=ctx.currentTime+.15;let spb,t0,reps,src=null,firstBeat;
+  if(S.mode==='song'){
+    if(!song.buf){toast('먼저 노래를 고르거나 예시 비트를 눌러 주세요');return}
+    const r=song.rate,bar=240/song.bpm;
+    let d=song.off+Math.max(0,Math.ceil((song.startAt-song.off)/bar-1e-6))*bar;
+    if(d<bar*.75)d+=bar;
+    const sPlay=Math.max(0,d-bar);
+    spb=60/song.bpm/r;t0=startCtx+(d-sPlay)/r;
+    reps=Math.floor((song.buf.duration-d)/(bar*P.bars));
+    if(reps<1){toast('시작 위치 뒤로 남은 노래가 너무 짧아요');return}
+    src=ctx.createBufferSource();src.buffer=song.buf;src.playbackRate.value=r;src.connect(songGain);src.start(startCtx,sPlay);
+    firstBeat=Math.ceil((startCtx-t0)/spb);
+  }else{
+    spb=60/S.bpm;t0=startCtx+4*spb;reps=S.reps===0?200:S.reps;firstBeat=-4;
+  }
+  const L=P.bars*4*spb,events=[];
+  for(let rep=0;rep<reps;rep++)for(const n of notes)events.push({t:t0+rep*L+n.pos*spb,h:n.h,i:n.i,rep,st:null,why:null,err:null,tapH:null});
+  const clicks=[],total=reps*P.bars*4;
+  for(let k=firstBeat;k<total;k++)clicks.push({t:t0+k*spb,acc:((k%4)+4)%4===0,count:k<0&&k>=-4});
+  const iv=spb/P.sub;
+  run={t0,spb,L,reps,N,bars:P.bars,events,clicks,ci:0,gi:0,scan:0,shown:-1,lastC:'',extra:0,src,
+    win:Math.min(.16,iv*.5),good:Math.min(.09,iv*.4),tEnd:t0+reps*L};
+  clearPaint();
+  run.timer=setInterval(schedule,25);schedule();
+  run.raf=requestAnimationFrame(frame);
+  if(src)src.onended=()=>{if(run&&run.src===src)finish(true)};
+  $('#btnPlay').textContent='정지';$('#btnPlay').classList.add('on');
+  requestWake();
+}
+function schedule(){
+  const R=run;if(!R)return;const now=ctx.currentTime,ahead=now+.12;
+  while(R.ci<R.clicks.length&&R.clicks[R.ci].t<ahead){const c=R.clicks[R.ci++];if(c.t>=now-.01&&(S.metro||c.count))playClick(c.t,c.acc)}
+  while(R.gi<R.events.length&&R.events[R.gi].t<ahead){const e=R.events[R.gi++];if(S.guide&&e.t>=now-.01)playHit(e.t,e.h,cur.notes[e.i].acc?.4:.2,true)}
+}
+function frame(){
+  const R=run;if(!R)return;R.raf=requestAnimationFrame(frame);
+  const now=ctx.currentTime-S.lat,ev=R.events,N=R.N;
+  while(R.scan<ev.length&&ev[R.scan].t+R.win<now){const e=ev[R.scan];if(!e.st){e.st='bad';e.why='miss';if(e.rep===R.shown)paint(e)}R.scan++}
+  const rel=(now-R.t0)/R.L,rep=Math.floor(rel);
+  if(rep>=0&&rep<R.reps&&rep!==R.shown){R.shown=rep;clearPaint();for(let i=0;i<N;i++)paint(ev[rep*N+i])}
+  if(rel>=0&&rel<R.reps){const pb=(rel-rep)*R.bars*4,b=Math.min(R.bars-1,Math.floor(pb/4));moveCursor(b,geo[b].xOf(pb))}else hideCursors();
+  let c='';if(now<R.t0){const k=Math.floor((now-R.t0)/R.spb);if(k>=-4)c=String(k+5)}
+  if(c!==R.lastC){R.lastC=c;overlay(c)}
+  if(S.hint){let nx=null;for(let k=R.scan;k<ev.length;k++){if(!ev[k].st){nx=ev[k];break}}setNext(nx&&nx.t-now<R.spb*1.5?nx.h:null)}
+  if(now>R.tEnd+R.win+.05)finish(true);
+}
+function hit(hand,ts){
+  ensureAudio();
+  const d=ts!=null?(performance.now()-ts)/1000:0,at=ctx.currentTime-(d>=0&&d<.1?d:0);
+  playHit(ctx.currentTime,hand,.6,false);padFx(hand,'hit');
+  try{navigator.vibrate&&navigator.vibrate(8)}catch(e){}
+  if(calib){calib.taps.push(at);return}
+  const R=run;if(!R)return;
+  const tap=at-S.lat;let best=null,bd=1e9;
+  for(let k=Math.max(0,R.scan-4);k<R.events.length;k++){
+    const e=R.events[k];if(e.t-R.win>tap)break;if(e.st)continue;
+    const dd=Math.abs(tap-e.t);if(dd<=R.win&&dd<bd){bd=dd;best=e}
+  }
+  if(!best){R.extra++;padFx(hand,'badf');return}
+  best.err=tap-best.t;best.tapH=hand;
+  if(best.h!==hand){best.st='bad';best.why='hand'}
+  else if(Math.abs(best.err)>R.good){best.st='bad';best.why=best.err<0?'early':'late'}
+  else best.st='ok';
+  if(best.rep===R.shown)paint(best);
+  padFx(hand,best.st==='ok'?'okf':'badf');
+}
+function finish(show){
+  const R=run;if(!R)return;run=null;
+  clearInterval(R.timer);cancelAnimationFrame(R.raf);
+  if(R.src){R.src.onended=null;try{R.src.stop()}catch(e){}}
+  releaseWake();hideCursors();setNext(null);overlay('');
+  $('#btnPlay').textContent='시작';$('#btnPlay').classList.remove('on');
+  clearPaint();
+  if(!show)return;
+  const ev=R.events.filter(e=>e.st);if(ev.length<4)return;
+  showResult(R,ev);
+}
+
+/* ---------- 결과와 진단 ---------- */
+function showResult(R,ev){
+  const notes=cur.notes,N=notes.length;
+  const ok=ev.filter(e=>e.st==='ok').length,pct=Math.round(100*ok/ev.length);
+  const cnt=w=>ev.filter(e=>e.why===w).length;
+  const lines=[];
+  ['L','R'].forEach(hd=>{
+    const a=ev.filter(e=>e.err!=null&&e.tapH===e.h&&e.h===hd);if(a.length<3)return;
+    const m=a.reduce((s,e)=>s+e.err,0)/a.length*1000,nm=hd==='L'?'왼손':'오른손';
+    if(m>=12)lines.push(`${nm}이 평균 <b>${Math.round(m)}ms 늦어요</b>`);
+    else if(m<=-12)lines.push(`${nm}이 평균 <b>${Math.round(-m)}ms 빨라요</b>`);
+    else lines.push(`${nm} 타이밍은 안정적이에요 (평균 ${m>=0?'+':''}${Math.round(m)}ms)`);
+  });
+  const TR={RR:'오른손 더블(R R)에서',LL:'왼손 더블(L L)에서',RL:'R → L로 넘어갈 때',LR:'L → R로 넘어갈 때'};
+  const tr={};
+  ev.forEach(e=>{const k=notes[(e.i-1+N)%N].h+e.h;(tr[k]=tr[k]||{t:0,b:0}).t++;if(e.st==='bad')tr[k].b++});
+  const worst=Object.entries(tr).filter(([,v])=>v.t>=3&&v.b>0).sort((a,b)=>b[1].b/b[1].t-a[1].b/a[1].t)[0];
+  if(worst&&worst[1].b/worst[1].t>=.25)lines.push(`${TR[worst[0]]} <b>자주 틀려요</b> (${worst[1].t}번 중 ${worst[1].b}번)`);
+  const lc={};ev.forEach(e=>{if(e.st==='bad'){const n=notes[e.i],k=n.bar*4+n.beat;lc[k]=(lc[k]||0)+1}});
+  const top=Object.entries(lc).sort((a,b)=>b[1]-a[1])[0];
+  if(top&&top[1]>=2){const k=+top[0];lines.push(`${Math.floor(k/4)+1}마디 ${k%4+1}박이 가장 어려웠어요`)}
+  let next='';
+  if(S.speedup&&S.mode!=='song'&&pct>=90){S.bpm=clamp(S.bpm+5,30,220);store.set('bpm',S.bpm);$('#bpmOut').textContent=S.bpm;next=`다음 연습은 ${S.bpm} BPM으로 올렸어요`}
+  const head=pct>=95?'완벽해요':pct>=80?'좋아요':pct>=60?'조금만 더':'템포를 낮춰 보세요';
+  const el=$('#result');
+  el.innerHTML=`<div class="res-top"><div class="res-score">${pct}<small>%</small></div><div><div class="res-head">${head}</div><div class="res-counts">${ev.length}음 중 ${ok}음 정확</div></div></div>`+
+    `<ul class="res-list">${lines.map(l=>`<li>${l}</li>`).join('')}${next?`<li>${next}</li>`:''}</ul>`+
+    `<div class="res-counts">손 순서 ${cnt('hand')} · 빠름 ${cnt('early')} · 늦음 ${cnt('late')} · 놓침 ${cnt('miss')} · 헛침 ${R.extra}</div>`+
+    `<div class="res-actions"><button class="btn" data-act="close">닫기</button>${S.mode==='read'?'<button class="btn" data-act="new">새 패턴</button>':''}<button class="btn primary" data-act="again">다시 하기</button></div>`;
+  el.hidden=false;
+  // 악보를 처음부터 다시 훑으며 음표마다 결과 색을 칠해요
+  const agg=notes.map(()=>({t:0,o:0}));ev.forEach(e=>{agg[e.i].t++;if(e.st==='ok')agg[e.i].o++});
+  const step=Math.min(70,1600/N);
+  notes.forEach((n,k)=>{const a=agg[k];if(!a.t)return;
+    setTimeout(()=>{const nel=noteEls[k];if(nel&&!run)nel.classList.add(a.o/a.t>=.8?'ok':'bad');
+      const b=n.bar;if(!run&&geo[b])moveCursor(b,geo[b].xOf(n.pos));if(k===N-1)setTimeout(()=>{if(!run)hideCursors()},300)},150+k*step)});
+}
+function hideResult(){$('#result').hidden=true}
+$('#result').addEventListener('click',e=>{
+  const a=e.target.closest('[data-act]');if(!a)return;
+  if(a.dataset.act==='close'){hideResult();clearPaint()}
+  else if(a.dataset.act==='new'){setPattern(genPattern(+$('#selLevel').value))}
+  else{clearPaint();startRun()}
+});
+
+/* ---------- 지연 보정 ---------- */
+function startCalib(){
+  ensureAudio();finish(false);closeSheet();hideResult();
+  const spb=.6,t0=ctx.currentTime+.4,clicks=[];
+  for(let k=0;k<12;k++){clicks.push(t0+k*spb);playClick(t0+k*spb,k%4===0)}
+  calib={clicks,taps:[]};
+  overlay('클릭 4번을 듣고, 이어지는 8번의 클릭에 맞춰\n아무 패드나 쳐 주세요',true);
+  setTimeout(()=>{
+    const C=calib;calib=null;overlay('');
+    const ds=[];C.taps.forEach(tp=>{let b=null;C.clicks.slice(4).forEach(c=>{const d=tp-c;if(Math.abs(d)<.28&&(b==null||Math.abs(d)<Math.abs(b)))b=d});if(b!=null)ds.push(b)});
+    if(ds.length<4){toast('탭이 부족해요. 다시 해 주세요');return}
+    ds.sort((a,b)=>a-b);S.lat=clamp(ds[Math.floor(ds.length/2)],-.05,.3);store.set('lat',S.lat);latUI();
+    toast(`보정 완료 · ${Math.round(S.lat*1000)}ms`);
+  },(.4+12*spb+.5)*1000);
+}
+
+/* ---------- UI ---------- */
+const padL=$('#padL'),padR=$('#padR');
+function padFx(hand,cls){
+  const p=hand==='L'?padL:padR;
+  if(cls!=='hit')p.classList.remove(cls==='okf'?'badf':'okf');
+  p.classList.remove(cls);void p.offsetWidth;p.classList.add(cls);
+  clearTimeout(p['_t'+cls]);p['_t'+cls]=setTimeout(()=>p.classList.remove(cls),cls==='hit'?90:220);
+}
+function setNext(h){padL.classList.toggle('next',h==='L');padR.classList.toggle('next',h==='R')}
+function overlay(t,msg){const o=$('#overlay');o.textContent=t;o.style.whiteSpace=msg?'pre-line':'';o.className='overlay'+(msg?' msg':'');o.hidden=!t}
+function toast(t){const el=$('#toast');el.textContent=t;el.hidden=false;clearTimeout(toast._t);toast._t=setTimeout(()=>{el.hidden=true},2600)}
+function latUI(){$('#latRange').value=Math.round(S.lat*1000);$('#latOut').textContent=Math.round(S.lat*1000)+'ms'}
+function closeSheet(){$('#sheet').hidden=true}
+
+[['L',padL],['R',padR]].forEach(([h,p])=>{
+  p.addEventListener('pointerdown',e=>{e.preventDefault();hit(h,e.timeStamp)});
+  p.addEventListener('contextmenu',e=>e.preventDefault());
+});
+document.addEventListener('keydown',e=>{
+  if(e.repeat||e.target.tagName==='SELECT'||e.target.tagName==='INPUT')return;
+  const k=e.key.toLowerCase();
+  if(k==='f'||k==='d'||k==='arrowleft'){e.preventDefault();hit('L',e.timeStamp)}
+  else if(k==='j'||k==='k'||k==='arrowright'){e.preventDefault();hit('R',e.timeStamp)}
+  else if(k===' '){e.preventDefault();$('#btnPlay').click()}
+});
+
+function patternForMode(){
+  if(S.mode==='rudiment')return buildRud($('#selRudiment').value);
+  if(S.mode==='read')return genPattern(+$('#selLevel').value);
+  const v=$('#selSongPat').value;return v.startsWith('l:')?genPattern(+v.slice(2)):buildRud(v.slice(2));
+}
+function applyMode(){
+  const m=S.mode;
+  document.querySelectorAll('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.mode===m)));
+  $('#rowRudiment').hidden=m!=='rudiment';$('#rowRead').hidden=m!=='read';
+  $('#rowSong').hidden=m!=='song';
+  $('#rowSongAdj').hidden=$('#rowSongPos').hidden=m!=='song'||!song.buf;
+  $('#bpmBox').hidden=$('#selReps').hidden=m==='song';
+  $('#selSongPat').hidden=$('#selRate').hidden=m!=='song';
+  $('#btnNew2').hidden=!(m==='song'&&$('#selSongPat').value.startsWith('l:'));
+}
+function changeMode(m){finish(false);S.mode=m;applyMode();setPattern(patternForMode())}
+
+$('#selRudiment').innerHTML=RUD.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+$('#selRudiment').value='para';
+$('#selLevel').innerHTML=LV.map(l=>`<option value="${l.id}">${l.name}</option>`).join('');
+$('#selLevel').value='2';
+$('#selSongPat').innerHTML=`<optgroup label="루디먼트">${RUD.map(r=>`<option value="r:${r.id}">${r.name}</option>`).join('')}</optgroup>`+
+  `<optgroup label="초견 패턴">${LV.map(l=>`<option value="l:${l.id}">${l.name}</option>`).join('')}</optgroup>`;
+$('#selSongPat').value='r:single8';
+
+document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>changeMode(b.dataset.mode)));
+$('#selRudiment').addEventListener('change',()=>{finish(false);setPattern(patternForMode())});
+$('#selLevel').addEventListener('change',()=>{finish(false);setPattern(patternForMode())});
+$('#btnNew').addEventListener('click',()=>{finish(false);setPattern(patternForMode())});
+$('#selSongPat').addEventListener('change',()=>{finish(false);applyMode();setPattern(patternForMode())});
+$('#btnNew2').addEventListener('click',()=>{finish(false);setPattern(patternForMode())});
+$('#bpmOut').textContent=S.bpm;
+const bump=d=>{S.bpm=clamp(S.bpm+d,30,220);store.set('bpm',S.bpm);$('#bpmOut').textContent=S.bpm;if(run)toast('바뀐 템포는 다음 시작부터 적용돼요')};
+$('#bpmDown').addEventListener('click',()=>bump(-5));
+$('#bpmUp').addEventListener('click',()=>bump(5));
+$('#selReps').addEventListener('change',e=>{S.reps=+e.target.value});
+$('#selRate').addEventListener('change',e=>{song.rate=+e.target.value/100});
+$('#btnPlay').addEventListener('click',()=>{if(calib)return;if(run)finish(true);else startRun()});
+
+$('#fileSong').addEventListener('change',async e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  finish(false);ensureAudio();$('#songInfo').textContent='박자 분석 중…';
+  try{
+    const ab=await f.arrayBuffer();
+    const buf=await new Promise((res,rej)=>ctx.decodeAudioData(ab,res,rej));
+    setTimeout(()=>setSong(buf,f.name.replace(/\.[^.]+$/,'')),20);
+  }catch(err){$('#songInfo').textContent='이 파일은 재생할 수 없어요. mp3나 m4a로 시도해 보세요'}
+  e.target.value='';
+});
+$('#btnDemo').addEventListener('click',async()=>{
+  finish(false);ensureAudio();$('#songInfo').textContent='예시 비트 만드는 중…';
+  try{const buf=await makeDemo();setSong(buf,'예시 비트')}catch(err){$('#songInfo').textContent='예시 비트를 만들지 못했어요'}
+});
+const songAdj=fn=>()=>{if(!song.buf)return;finish(false);fn();normOff();songUI()};
+$('#sbDown').addEventListener('click',songAdj(()=>{song.bpm=clamp(Math.round((song.bpm-.5)*10)/10,40,240)}));
+$('#sbUp').addEventListener('click',songAdj(()=>{song.bpm=clamp(Math.round((song.bpm+.5)*10)/10,40,240)}));
+$('#sbHalf').addEventListener('click',songAdj(()=>{song.bpm=clamp(song.bpm/2,40,240)}));
+$('#sbDbl').addEventListener('click',songAdj(()=>{song.bpm=clamp(song.bpm*2,40,240)}));
+$('#offPrev').addEventListener('click',songAdj(()=>{song.off-=60/song.bpm}));
+$('#offNext').addEventListener('click',songAdj(()=>{song.off+=60/song.bpm}));
+$('#nudgeL').addEventListener('click',songAdj(()=>{song.off-=.01}));
+$('#nudgeR').addEventListener('click',songAdj(()=>{song.off+=.01}));
+$('#songStart').addEventListener('input',e=>{song.startAt=+e.target.value;$('#songStartOut').textContent=fmtT(song.startAt)});
+$('#songStart').addEventListener('change',()=>finish(false));
+
+$('#btnSettings').addEventListener('click',()=>{$('#sheet').hidden=false});
+$('#sheetClose').addEventListener('click',closeSheet);
+$('#sheet').addEventListener('click',e=>{if(e.target.id==='sheet')closeSheet()});
+[['optMetro','metro'],['optGuide','guide'],['optHint','hint'],['optSpeed','speedup']].forEach(([id,k])=>{
+  const el=$('#'+id);el.checked=S[k];
+  el.addEventListener('change',()=>{S[k]=el.checked;store.set(k,S[k]);if(k==='hint'&&!S.hint)setNext(null)});
+});
+latUI();
+$('#latRange').addEventListener('input',e=>{S.lat=+e.target.value/1000;store.set('lat',S.lat);latUI()});
+$('#btnCalib').addEventListener('click',startCalib);
+document.addEventListener('visibilitychange',()=>{if(document.hidden)finish(false)});
+
+let lastW=0;
+new ResizeObserver(()=>{const w=$('#score').clientWidth;if(Math.abs(w-lastW)>2){lastW=w;renderStaff();if(run)run.shown=-2}}).observe($('#score'));
+
+songUI();applyMode();setPattern(patternForMode());
+})();
+</script>
+</body>
+</html>
