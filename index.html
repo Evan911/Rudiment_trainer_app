@@ -434,7 +434,8 @@ function buildKit(song){
     bar.hands.forEach((hd,slot)=>{
       if(!hd.length)return;const hit=bar.hits[slot],sib=[];
       const acc=Object.keys(hit).some(i=>KIT[i]&&!KIT[i].foot&&/[A-Z]/.test(hit[i]));
-      hd.forEach(hand=>{const i=notes.length;sib.push(i);notes.push({i,pos:b*4+slot/sub,h:hand,g:null,acc,bar:b,beat:Math.floor(slot/sub),k:`${b}-${slot}`,sib})});
+      // 드럼 세트 악보는 손을 정하지 않아요: 같은 순간에 치는 악기들은 패드 아무거나 한 번 (h:'A')
+      const i=notes.length;sib.push(i);notes.push({i,pos:b*4+slot/sub,h:'A',g:null,acc,bar:b,beat:Math.floor(slot/sub),k:`${b}-${slot}`,sib});
     });
   });
   return {kind:'kit',name:song.title,sub:maxSub,bars:song.bars.length,song,notes,slots:[]};
@@ -625,7 +626,6 @@ function kitMarkup(P,avail,opt={}){
         if(!insts.length)continue;
         let g=insts.map(i=>kitHead(i,hit[i],x,yOf(i),T,s)).join('');
         if(insts.some(i=>/[A-Z]/.test(hit[i])))g+=`<path class="acc" d="M${r1(x-4)} ${upTop-12.5} L${r1(x+5)} ${upTop-9} L${r1(x-4)} ${upTop-5.5}"/>`;
-        hands.forEach((hd,n)=>{g+=`<text class="stk" x="${r1(x)}" y="${T+4*s+28+n*11}">${hd}</text>`});
         h+=`<g class="note" data-k="${b}-${slot}">${g}</g>`;
       }
       const hr=reduceBeat(handHits,sub),hm=j=>j*sub/hr.s;
@@ -908,7 +908,7 @@ function startRun(){
 function schedule(){
   const R=run;if(!R)return;const now=ctx.currentTime,ahead=now+.12;
   while(R.ci<R.clicks.length&&R.clicks[R.ci].t<ahead){const c=R.clicks[R.ci++];if(c.t>=now-.01&&(S.metro||c.count))playClick(c.t,c.acc)}
-  while(R.gi<R.events.length&&R.events[R.gi].t<ahead){const e=R.events[R.gi++];if(S.guide&&e.t>=now-.01){if(e.g)playHit(e.t-.03,e.g,.1,true);playHit(e.t,e.h,cur.notes[e.i].acc?.4:.2,true)}}
+  while(R.gi<R.events.length&&R.events[R.gi].t<ahead){const e=R.events[R.gi++];if(S.guide&&e.t>=now-.01){if(e.g)playHit(e.t-.03,e.g,.1,true);playHit(e.t,e.h==='A'?'R':e.h,cur.notes[e.i].acc?.4:.2,true)}}
 }
 function frame(){
   const R=run;if(!R)return;R.raf=requestAnimationFrame(frame);
@@ -925,7 +925,7 @@ function frame(){
     let nx=null,nk=-1;for(let k=R.scan;k<ev.length;k++){if(!ev[k].st){nx=ev[k];nk=k;break}}
     let hd=null;
     if(nx&&nx.t-now<R.spb*1.5){
-      hd=nx.g&&nx.gt==null?nx.g:nx.h;
+      hd=nx.g&&nx.gt==null?nx.g:nx.h==='A'?'B':nx.h; // 손 구분 없는 음표는 두 패드 다 켜요
       const n2=ev[nk+1];if(n2&&!n2.st&&Math.abs(n2.t-nx.t)<.001&&n2.h!==nx.h)hd='B'; // 두 손 동시
     }
     setNext(hd);
@@ -954,7 +954,7 @@ function judge(R,hand,tap){
     if(e.st)continue;
     const dd=Math.abs(tap-e.t);if(dd>e.w)continue;
     if(dd<bd){bd=dd;best=e}
-    if(e.h===hand&&dd<sd){sd=dd;same=e}
+    if((e.h===hand||e.h==='A')&&dd<sd){sd=dd;same=e}
   }
   if(gr&&(!same||sd>same.gd)){
     gr.gt=tap;
@@ -967,7 +967,7 @@ function judge(R,hand,tap){
   if(same)best=same;
   if(!best){R.extra++;padFx(hand,'badf');return}
   best.err=tap-best.t;best.tapH=hand;best.mt=tap;
-  if(best.h!==hand){best.st='bad';best.why='hand'}
+  if(best.h!==hand&&best.h!=='A'){best.st='bad';best.why='hand'}
   else if(Math.abs(best.err)>best.gd){best.st='bad';best.why=best.err<0?'early':'late'}
   else if(best.g){
     const gap=best.gt==null?null:tap-best.gt;
@@ -1008,7 +1008,7 @@ function showResult(R,ev){
   const tr={};
   ev.forEach(e=>{const k=notes[(e.i-1+N)%N].h+e.h;(tr[k]=tr[k]||{t:0,b:0}).t++;if(e.st==='bad')tr[k].b++});
   const worst=Object.entries(tr).filter(([,v])=>v.t>=3&&v.b>0).sort((a,b)=>b[1].b/b[1].t-a[1].b/a[1].t)[0];
-  if(worst&&worst[1].b/worst[1].t>=.25)lines.push(`${TR[worst[0]]} <b>자주 틀려요</b> (${worst[1].t}번 중 ${worst[1].b}번)`);
+  if(worst&&TR[worst[0]]&&worst[1].b/worst[1].t>=.25)lines.push(`${TR[worst[0]]} <b>자주 틀려요</b> (${worst[1].t}번 중 ${worst[1].b}번)`);
   const lc={};ev.forEach(e=>{if(e.st==='bad'){const n=notes[e.i],k=n.bar*4+n.beat;lc[k]=(lc[k]||0)+1}});
   const top=Object.entries(lc).sort((a,b)=>b[1]-a[1])[0];
   if(top&&top[1]>=2){const k=+top[0];lines.push(`${Math.floor(k/4)+1}마디 ${k%4+1}박이 가장 어려웠어요`)}
