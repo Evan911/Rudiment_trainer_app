@@ -237,7 +237,7 @@ input[type=range]{accent-color:var(--signal);width:100%}
 </div>
 
 <input type="file" id="fileSong" accept="audio/*" class="vh" tabindex="-1" aria-hidden="true">
-<input type="file" id="fileKit" accept=".json,application/json,text/plain" class="vh" tabindex="-1" aria-hidden="true">
+<input type="file" id="fileKit" accept=".pdf,application/pdf,.json,application/json" class="vh" tabindex="-1" aria-hidden="true">
 <div class="sheet-back" id="sheet" hidden><div class="sheet" id="sheetBody" role="dialog" aria-modal="true"></div></div>
 
 <script>
@@ -1243,8 +1243,8 @@ function openKitSheet(){
   const saved=store.get('kitSongs',[]),curT=kitJson&&kitJson.title;
   const row=(attr,j,del)=>`<div class="opt-row"><button class="opt" ${attr} aria-pressed="${curT===j.title}"><span>${esc(j.title||'제목 없음')}</span><small>${j.bpm||'?'} BPM</small>${ICON.check}</button>${del}</div>`;
   const html=head('드럼 악보')+
-    `<div class="row2"><label class="btn primary" for="fileKit">악보 파일 열기 (.json)</label></div>`+
-    `<p class="note">연 악보는 이 기기에만 저장되고, 어디에도 올라가지 않아요.</p>`+
+    `<div class="row2"><label class="btn primary" for="fileKit">드럼 악보 PDF 열기</label></div>`+
+    `<p class="note">악보바다처럼 악보 프로그램으로 만든 PDF를 바로 연습용 악보로 바꿔요. 스캔·사진 PDF는 아직 못 읽어요. 연 악보는 이 기기에만 저장되고 어디에도 올라가지 않아요. (곡 파일 .json도 열 수 있어요)</p>`+
     `<div class="grp">예제</div><div class="list">${row('data-demo="1"',DEMO_KIT,'')}</div>`+
     (saved.length?`<div class="grp">내 악보</div><div class="list">${saved.map((j,i)=>row(`data-saved="${i}"`,j,`<button class="txt" data-del="${i}">삭제</button>`)).join('')}</div>`:'');
   openSheet('kit',html,b=>{
@@ -1255,8 +1255,35 @@ function openKitSheet(){
     }));
   });
 }
+// PDF 읽기 도구(pdf.js와 변환기)는 처음 PDF를 열 때만 내려받아요
+const PDFJS='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+let pdfReady=null;
+const loadScript=src=>new Promise((res,rej)=>{const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=()=>rej(new Error('도구를 내려받지 못했어요. 인터넷 연결을 확인해 주세요'));document.head.appendChild(s)});
+function ensurePdf(){
+  if(!pdfReady)pdfReady=(async()=>{
+    await loadScript(PDFJS+'pdf.min.js');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js';
+    await loadScript('pdf-import.js?v=1');
+    return window.pdfjsLib;
+  })().catch(err=>{pdfReady=null;throw err});
+  return pdfReady;
+}
+async function importPdf(f){
+  closeSheet();finish(false);hideResult();
+  overlay('PDF 악보를 읽는 중…',true);
+  try{
+    const lib=await ensurePdf();
+    const res=await window.DrumPdf.parseDrumPdf(lib,new Uint8Array(await f.arrayBuffer()),{onProgress:(p,n)=>overlay(`PDF 악보를 읽는 중… ${p}/${n}쪽`,true)});
+    overlay('');
+    const hasNotes=res.song.bars.some(b=>Object.keys(b).some(k=>KIT[k]));
+    if(!hasNotes){toast('이 PDF에서 드럼 악보를 찾지 못했어요. 스캔·사진 PDF는 아직 못 읽어요');return}
+    if(!res.song.title||res.song.title==='불러온 악보')res.song.title=f.name.replace(/\.[^.]+$/,'');
+    if(loadKit(res.song,true))toast(`${res.measures}마디를 읽었어요${res.warnings.length?` · ${res.warnings.length}곳은 원본과 비교해 주세요`:''}`);
+  }catch(err){overlay('');toast('PDF를 읽지 못했어요: '+(err&&err.message||err))}
+}
 $('#fileKit').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+  if(/\.pdf$/i.test(f.name)||f.type==='application/pdf'){importPdf(f);return}
   try{const json=JSON.parse(await f.text());if(!json.title)json.title=f.name.replace(/\.[^.]+$/,'');if(loadKit(json,true)){closeSheet();toast(`'${json.title}' 악보를 열었어요`)}}
   catch(err){toast('JSON 형식이 아니에요. 곡 파일(.json)을 골라 주세요')}
 });
