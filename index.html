@@ -80,6 +80,8 @@ button{cursor:pointer}
 .tup{font:italic 600 11px var(--f-latin);fill:var(--muted);text-anchor:middle}
 .stk{font:600 13px var(--f-latin);fill:var(--muted);text-anchor:middle;letter-spacing:.02em}
 .note .head,.note .stk{transition:fill .15s}
+.stem.gs{stroke-width:1}
+.stk.gr{font-size:9.5px}
 .note.ok .head,.note.ok .stk,.note.ok .dot{fill:var(--ok)}
 .note.ok .stem{stroke:var(--ok)}
 .note.bad .head,.note.bad .stk,.note.bad .dot{fill:var(--bad)}
@@ -265,6 +267,11 @@ const RUD=[
   {id:'pdd',     name:'패러디들디들',       sub:3, cyc:'RLRRLL', acc:[0]},
   {id:'trip',    name:'셋잇단 싱글',        sub:3, cyc:'RLRLRL', acc:[0,3]},
   {id:'five',    name:'5스트로크 롤',       sub:4, cyc:'RRLLR---LLRRL---', acc:[4,12]},
+  // 소문자 = 플램 꾸밈음 (바로 뒤 본음보다 살짝 먼저 치는 반대 손)
+  {id:'flam',    name:'플램',               sub:2, cyc:'lRrL', acc:[]},
+  {id:'flamtap', name:'플램 탭',            sub:4, cyc:'lRRrLL', acc:[]},
+  {id:'flamacc', name:'플램 액센트',        sub:3, cyc:'lRLRrLRL', acc:[0,3]},
+  {id:'swiss',   name:'스위스 아미 트리플렛', sub:3, cyc:'lRRLlRRL', acc:[]},
 ];
 const LV=[
   {id:1,name:'레벨 1',desc:'4분음표',          sub:1,p:.75,stick:'alt'},
@@ -275,11 +282,16 @@ const LV=[
 ];
 const SUBNAME={1:'4분음표',2:'8분음표',3:'셋잇단',4:'16분음표'};
 const BARS=2;
-const stickPreview=r=>{const s=r.cyc.replace(/-/g,'·'),k=r.sub===2?4:r.sub,out=[];for(let i=0;i<s.length&&out.length<4;i+=k)out.push(s.slice(i,i+k));return out.join(' ')};
+// 'lRrL' → [{h:'R',g:'L'},{h:'L',g:'R'}]. 소문자는 다음 음의 꾸밈음, '-'는 쉼표
+function parseCyc(cyc){const out=[];let g=null;for(const c of cyc){if(c==='l'||c==='r'){g=c.toUpperCase();continue}out.push(c==='-'?null:{h:c,g});g=null}return out}
+const stickPreview=r=>{
+  const t=parseCyc(r.cyc).map(c=>c?(c.g?c.g.toLowerCase():'')+c.h:'·'),k=r.sub===2?4:r.sub,out=[];
+  for(let i=0;i<t.length&&out.length<4;i+=k)out.push(t.slice(i,i+k).join(''));return out.join(' ');
+};
 
 function buildRud(id){
-  const r=RUD.find(x=>x.id===id)||RUD[0],n=BARS*4*r.sub,slots=[];
-  for(let j=0;j<n;j++){const c=r.cyc[j%r.cyc.length];slots.push(c==='-'?null:{h:c,acc:r.acc.includes(j%r.cyc.length)})}
+  const r=RUD.find(x=>x.id===id)||RUD[0],cyc=parseCyc(r.cyc),n=BARS*4*r.sub,slots=[];
+  for(let j=0;j<n;j++){const k=j%cyc.length,c=cyc[k];slots.push(c?{h:c.h,g:c.g,acc:r.acc.includes(k)}:null)}
   return {name:r.name,sub:r.sub,bars:BARS,slots};
 }
 function genPattern(id){
@@ -306,7 +318,7 @@ function setPattern(P){
   hideResult();
   cur.pattern=P;cur.notes=[];cur.slotNote=new Array(P.slots.length).fill(-1);
   P.slots.forEach((s,j)=>{if(s){cur.slotNote[j]=cur.notes.length;
-    cur.notes.push({i:cur.notes.length,j,pos:j/P.sub,h:s.h,acc:s.acc,bar:Math.floor(j/(4*P.sub)),beat:Math.floor(j/P.sub)%4})}});
+    cur.notes.push({i:cur.notes.length,j,pos:j/P.sub,h:s.h,g:s.g||null,acc:s.acc,bar:Math.floor(j/(4*P.sub)),beat:Math.floor(j/P.sub)%4})}});
   $('#patName').textContent=P.name;
   $('#patMeta').innerHTML=`<b>${SUBNAME[P.sub]}</b> &nbsp;·&nbsp; 4/4 &nbsp;·&nbsp; ${P.bars}마디 반복${P.gen?' &nbsp;·&nbsp; 자동 생성':''}`;
   renderStaff();
@@ -324,6 +336,15 @@ function flagPath(sx,top,c){
   for(let f=0;f<c;f++){const y=top+f*7;
     s+=`<path class="flag" d="M${r1(sx)} ${y} C${r1(sx+1)} ${y+6} ${r1(sx+9)} ${y+8} ${r1(sx+7)} ${y+17} C${r1(sx+6)} ${y+11} ${r1(sx+3)} ${y+9} ${r1(sx)} ${y+7} Z"/>`}
   return s;
+}
+// 플램 꾸밈음: 본음 왼쪽의 작은 음표(빗금 친 8분 꾸밈음) + 작은 스티킹 글자
+function graceGlyph(x,y,hand){
+  const gx=r1(x-11),sx=r1(x-11+3.3),top=y-21;
+  return `<ellipse class="head" cx="${gx}" cy="${y}" rx="3.6" ry="2.7" transform="rotate(-20 ${gx} ${y})"/>`+
+    `<line class="stem gs" x1="${sx}" x2="${sx}" y1="${y-1}" y2="${top}"/>`+
+    `<path class="flag" d="M${sx} ${top} C${r1(sx+.6)} ${top+4} ${r1(sx+5.5)} ${top+5} ${r1(sx+4.5)} ${top+11} C${r1(sx+4)} ${top+7} ${r1(sx+2)} ${top+6} ${sx} ${top+4.5} Z"/>`+
+    `<line class="stem gs" x1="${r1(sx-3.5)}" x2="${r1(sx+5)}" y1="${top+12}" y2="${top+4}"/>`+
+    `<text class="stk gr" x="${r1(x-12)}" y="${y+26}">${hand}</text>`;
 }
 const REST_TABLE={4:{1:[['s',0]],2:[['e',0]],3:[['e',0],['s',2]]},2:{1:[['e',0]]},3:{1:[['e',0]],2:[['e',0],['e',1]]},1:{}};
 function renderBeat(P,bar,beat,xOf,lineY){
@@ -345,6 +366,7 @@ function renderBeat(P,bar,beat,xOf,lineY){
     h+=`<g class="note ${it.s.h}" data-i="${it.n}"><ellipse class="head" cx="${x}" cy="${lineY}" rx="5.6" ry="4.1" transform="rotate(-20 ${x} ${lineY})"/>`+
        `<line class="stem" x1="${sx}" x2="${sx}" y1="${lineY-1.5}" y2="${stemTop}"/>`+
        (it.dot?`<circle class="dot" cx="${r1(it.x+10)}" cy="${lineY-3}" r="1.7"/>`:'')+
+       (it.s.g?graceGlyph(it.x,lineY,it.s.g):'')+
        `<text class="stk" x="${x}" y="${lineY+27}">${it.s.h}</text></g>`;
     if(it.s.acc){const ay=stemTop-9;h+=`<path class="acc" d="M${r1(it.x-4)} ${ay-3.5} L${r1(it.x+5)} ${ay} L${r1(it.x-4)} ${ay+3.5}"/>`}
   });
@@ -371,7 +393,7 @@ function renderStaff(){
   const W=Math.max(280,Math.floor($('#staffWrap').clientWidth)),sysH=96,H=sysH*P.bars;
   let h='';geo=[];
   for(let b=0;b<P.bars;b++){
-    const lineY=b*sysH+54,left=b===0?32:4,right=W-4,i0=left+16,i1=right-22;
+    const lineY=b*sysH+54,left=b===0?32:4,right=W-4,i0=left+(P.slots.some(s=>s&&s.g)?22:16),i1=right-22;
     const xOf=pos=>i0+(pos-b*4)/4*(i1-i0);
     geo.push({lineY,xOf});
     h+=`<rect class="cursor" id="cur${b}" x="0" y="${lineY-40}" width="2" height="76" rx="1" visibility="hidden"/>`;
@@ -565,7 +587,7 @@ function startRun(){
     spb=60/S.bpm;t0=startCtx+4*spb;reps=S.reps===0?200:S.reps;firstBeat=-4;
   }
   const L=P.bars*4*spb,events=[];
-  for(let rep=0;rep<reps;rep++)for(const n of notes)events.push({t:t0+rep*L+n.pos*spb,h:n.h,i:n.i,rep,st:null,why:null,err:null,tapH:null});
+  for(let rep=0;rep<reps;rep++)for(const n of notes)events.push({t:t0+rep*L+n.pos*spb,h:n.h,g:n.g,i:n.i,rep,st:null,why:null,err:null,tapH:null,gt:null});
   const clicks=[],total=reps*P.bars*4;
   for(let k=firstBeat;k<total;k++)clicks.push({t:t0+k*spb,acc:((k%4)+4)%4===0,count:k<0&&k>=-4});
   const iv=spb/P.sub;
@@ -581,7 +603,7 @@ function startRun(){
 function schedule(){
   const R=run;if(!R)return;const now=ctx.currentTime,ahead=now+.12;
   while(R.ci<R.clicks.length&&R.clicks[R.ci].t<ahead){const c=R.clicks[R.ci++];if(c.t>=now-.01&&(S.metro||c.count))playClick(c.t,c.acc)}
-  while(R.gi<R.events.length&&R.events[R.gi].t<ahead){const e=R.events[R.gi++];if(S.guide&&e.t>=now-.01)playHit(e.t,e.h,cur.notes[e.i].acc?.4:.2,true)}
+  while(R.gi<R.events.length&&R.events[R.gi].t<ahead){const e=R.events[R.gi++];if(S.guide&&e.t>=now-.01){if(e.g)playHit(e.t-.03,e.g,.1,true);playHit(e.t,e.h,cur.notes[e.i].acc?.4:.2,true)}}
 }
 function frame(){
   const R=run;if(!R)return;R.raf=requestAnimationFrame(frame);
@@ -594,9 +616,11 @@ function frame(){
   lightBeat(bk>=-4&&now<R.tEnd?((bk%4)+4)%4:-1);
   let c='';if(now<R.t0&&bk>=-4)c=String(bk+5);
   if(c!==R.lastC){R.lastC=c;overlay(c)}
-  if(S.hint){let nx=null;for(let k=R.scan;k<ev.length;k++){if(!ev[k].st){nx=ev[k];break}}setNext(nx&&nx.t-now<R.spb*1.5?nx.h:null)}
+  if(S.hint){let nx=null;for(let k=R.scan;k<ev.length;k++){if(!ev[k].st){nx=ev[k];break}}setNext(nx&&nx.t-now<R.spb*1.5?(nx.g&&nx.gt==null?nx.g:nx.h):null)}
   if(now>R.tEnd+R.win+.05)finish(true);
 }
+// 플램 간격 기준(초): 이보다 붙으면 동시에 친 것(플랫 플램), 이보다 벌어지면 두 번 친 것
+const FLAM_FLAT=.008,FLAM_WIDE=.12,FLAM_PRE=.16;
 function hit(hand,ts){
   ensureAudio();
   const d=ts!=null?(performance.now()-ts)/1000:0,at=ctx.currentTime-(d>=0&&d<.1?d:0);
@@ -604,19 +628,41 @@ function hit(hand,ts){
   if(S.vibe)try{navigator.vibrate&&navigator.vibrate(8)}catch(e){}
   if(calib){calib.taps.push(at);return}
   const R=run;if(!R)return;
+  judge(R,hand,at-S.lat);
+}
+// tap: 지연 보정을 뺀, 악보 기준 시각(초)
+function judge(R,hand,tap){
   // 판정 창 안의 음표 중 같은 손 음표를 먼저 찾아요. 빠른 템포에서 살짝 어긋나도 옆 음표(반대 손)로 오판하지 않게.
-  const tap=at-S.lat;let best=null,bd=1e9,same=null,sd=1e9;
-  for(let k=Math.max(0,R.scan-4);k<R.events.length;k++){
-    const e=R.events[k];if(e.t-R.win>tap)break;if(e.st)continue;
+  let best=null,bd=1e9,same=null,sd=1e9,gr=null,gd=1e9;
+  for(let k=Math.max(0,R.scan-6);k<R.events.length;k++){
+    const e=R.events[k];if(e.t-Math.max(R.win,FLAM_PRE)>tap)break;
+    // 플램 꾸밈음 후보: 본음보다 조금 먼저(최대 FLAM_PRE) 친 반대 손
+    if(e.g===hand&&e.gt==null){const d=e.t-tap;if(d>=-.05&&d<=FLAM_PRE&&Math.abs(d)<gd){gd=Math.abs(d);gr=e}}
+    if(e.st)continue;
     const dd=Math.abs(tap-e.t);if(dd>R.win)continue;
     if(dd<bd){bd=dd;best=e}
     if(e.h===hand&&dd<sd){sd=dd;same=e}
   }
+  if(gr&&(!same||sd>R.good)){
+    gr.gt=tap;
+    if(gr.st){ // 본음을 먼저 쳤어요: 거의 동시면 플랫 플램, 아니면 순서가 반대
+      if(gr.st==='ok'||gr.why==='flamgrace'){gr.st='bad';gr.why=gr.mt!=null&&tap-gr.mt<FLAM_FLAT?'flamflat':'flamorder';if(gr.rep===R.shown)paint(gr)}
+      padFx(hand,'badf');
+    }else padFx(hand,'okf');
+    return;
+  }
   if(same)best=same;
   if(!best){R.extra++;padFx(hand,'badf');return}
-  best.err=tap-best.t;best.tapH=hand;
+  best.err=tap-best.t;best.tapH=hand;best.mt=tap;
   if(best.h!==hand){best.st='bad';best.why='hand'}
   else if(Math.abs(best.err)>R.good){best.st='bad';best.why=best.err<0?'early':'late'}
+  else if(best.g){
+    const gap=best.gt==null?null:tap-best.gt;
+    if(gap==null){best.st='bad';best.why='flamgrace'}
+    else if(gap<FLAM_FLAT){best.st='bad';best.why='flamflat'}
+    else if(gap>FLAM_WIDE){best.st='bad';best.why='flamwide'}
+    else best.st='ok';
+  }
   else best.st='ok';
   if(best.rep===R.shown)paint(best);
   padFx(hand,best.st==='ok'?'okf':'badf');
@@ -658,12 +704,17 @@ function showResult(R,ev){
   latFix=0;
   if(errs.length>=8){const med=errs[Math.floor(errs.length/2)];if(Math.abs(med)>=.02){latFix=med;
     lines.push(`전체 타이밍이 ${Math.round(Math.abs(med)*1000)}ms ${med>0?'늦게':'빠르게'} 잡혀요. 폰 지연 때문일 수 있어요`)}}
+  const fl={grace:cnt('flamgrace'),flat:cnt('flamflat'),order:cnt('flamorder'),wide:cnt('flamwide')};
+  if(fl.grace>=2)lines.push(`플램 꾸밈음이 자주 <b>빠져요</b> (${fl.grace}번). 본음 직전에 반대 손을 살짝`);
+  if(fl.flat>=2)lines.push(`두 손을 <b>동시에</b> 쳐요 (${fl.flat}번). 꾸밈음을 아주 조금 먼저`);
+  if(fl.order>=2)lines.push(`꾸밈음이 본음보다 <b>늦어요</b> (${fl.order}번)`);
+  if(fl.wide>=2)lines.push(`꾸밈음과 본음 사이가 <b>너무 벌어져요</b> (${fl.wide}번). 한 번처럼 들리게`);
   if(S.speedup&&S.mode!=='song'&&pct>=90){S.bpm=clamp(S.bpm+5,30,220);store.set('bpm',S.bpm);updateTempo();lines.push(`다음 연습은 ${S.bpm} BPM으로 올렸어요`)}
   const head=pct>=95?'완벽해요':pct>=80?'좋아요':pct>=60?'조금만 더':'템포를 낮춰 보세요';
   const el=$('#result');
   el.innerHTML=`<div class="res-top"><div class="res-score">${pct}<small>%</small></div><div><div class="res-head">${head}</div><div class="res-sub">${ev.length}음 중 ${ok}음 정확</div></div></div>`+
     `<ul class="res-list">${lines.map(l=>`<li>${l}</li>`).join('')}</ul>`+
-    `<div class="res-sub">손 순서 ${cnt('hand')} · 빠름 ${cnt('early')} · 늦음 ${cnt('late')} · 놓침 ${cnt('miss')} · 헛침 ${R.extra}</div>`+
+    `<div class="res-sub">손 순서 ${cnt('hand')} · 빠름 ${cnt('early')} · 늦음 ${cnt('late')} · 놓침 ${cnt('miss')} · 헛침 ${R.extra}${notes.some(n=>n.g)?` · 플램 ${fl.grace+fl.flat+fl.order+fl.wide}`:''}</div>`+
     `<div class="res-actions">${latFix?`<button class="btn" data-act="fixlat">지연 보정 ${latFix>0?'+':'−'}${Math.round(Math.abs(latFix)*1000)}ms</button>`:''}<button class="btn" data-act="close">닫기</button>${cur.pattern.gen?'<button class="btn" data-act="new">새 패턴</button>':''}<button class="btn primary" data-act="again">다시 하기</button></div>`;
   el.hidden=false;
   // 악보를 처음부터 다시 훑으며 음표마다 결과 색을 칠해요
@@ -944,6 +995,8 @@ let lastW=0;
 new ResizeObserver(()=>{const w=$('#staffWrap').clientWidth;if(Math.abs(w-lastW)>2){lastW=w;renderStaff();if(run)run.shown=-2}}).observe($('#staffWrap'));
 
 setPlayBtn(false);songUI();applyMode();setPattern(patternForMode());
+// 로컬 개발 서버에서만: 판정 로직을 정확한 시각으로 시험하기 위한 연결
+if(location.hostname==='localhost')window.__rudi={judge,buildRud,setPattern,cur};
 })();
 </script>
 </body>
