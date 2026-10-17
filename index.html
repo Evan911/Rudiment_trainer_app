@@ -87,9 +87,9 @@ button{cursor:pointer}
 .note.bad .head,.note.bad .stk,.note.bad .dot{fill:var(--bad)}
 .note.bad .stem{stroke:var(--bad)}
 .cursor{fill:var(--signal);opacity:.9}
-.staff-wrap.kit{overflow-x:auto;overflow-y:hidden;scrollbar-width:none;cursor:pointer}
+.staff-wrap.kit{overflow-x:hidden;overflow-y:auto;align-items:flex-start;scrollbar-width:none;cursor:pointer;margin-top:4px}
 .staff-wrap.kit::-webkit-scrollbar{display:none}
-.staff-wrap.kit #staff{flex:none;max-width:none}
+.staff-wrap.kit #staff{flex:none;margin:0}
 .kit-x{stroke:var(--ink);stroke-width:1.5;stroke-linecap:round;fill:none}
 .kit-o{stroke:var(--ink);stroke-width:1.2;fill:none}
 .note.ok .kit-x,.note.ok .kit-o{stroke:var(--ok)}
@@ -417,8 +417,8 @@ S.kitBpm=store.get('kitBpm',(kitJson&&kitJson.bpm)||90);S.kitStart=0;
 const cur={pattern:null,notes:[],slotNote:[]};
 function kitMeta(){
   const P=cur.pattern;
-  $('#patMeta').innerHTML=`<b>드럼 악보</b> &nbsp;·&nbsp; 원곡 ${P.song.bpm} BPM${P.song.tempoChanges?' (템포 변화 있음)':''} &nbsp;·&nbsp; ${P.bars}마디`+
-    (S.kitStart?` &nbsp;·&nbsp; <b>${S.kitStart+1}마디부터</b>`:' &nbsp;·&nbsp; 마디를 누르면 거기서 시작');
+  $('#patMeta').innerHTML=`원곡 ${P.song.bpm} BPM${P.song.tempoChanges?'(변속)':''} &nbsp;·&nbsp; ${P.bars}마디`+
+    (S.kitStart?` &nbsp;·&nbsp; <b>${S.kitStart+1}마디부터</b>`:' &nbsp;·&nbsp; 마디를 눌러 시작점 선택');
 }
 function setPattern(P){
   hideResult();
@@ -556,26 +556,35 @@ function kitHead(inst,c,x,y,T,s){
   }
   return g;
 }
-const KIT_X0=46,KIT_BARW=340,KIT_T=74,KIT_S=8;
+// 드럼 악보는 실제 악보처럼 줄을 쌓아요: 화면 폭에 맞춰 한 줄에 마디 몇 개, 연습 중에는 한 줄씩 위로 넘김
+const KIT_X0=38,KIT_MINBAR=290,KIT_T=56,KIT_S=8,KIT_SYSH=131;
+let kitLay={perRow:1,barW:300,x0:KIT_X0,sysH:KIT_SYSH};
 function renderKit(P){
-  const svg=$('#staff'),song=P.song,s=KIT_S,T=KIT_T,barW=KIT_BARW,x0=KIT_X0;
-  const W=x0+P.bars*barW+16,H=T+4*s+62,upTop=T-26;
-  const yOf=inst=>T+KIT[inst].st*s/2;
+  const svg=$('#staff'),song=P.song,s=KIT_S,x0=KIT_X0,sysH=KIT_SYSH;
+  const avail=Math.max(300,Math.floor($('#staffWrap').clientWidth));
+  const perRow=Math.max(1,Math.floor((avail-x0-6)/KIT_MINBAR)),barW=(avail-x0-6)/perRow;
+  const rows=Math.ceil(P.bars/perRow),W=avail,H=rows*sysH+8;
+  kitLay={perRow,barW,x0,sysH};
   let h='';geo=[];
-  h+=`<rect class="startmark" id="startMark" x="0" y="${T-44}" width="${barW}" height="${4*s+100}" visibility="hidden"/>`;
-  h+=`<rect class="cursor" id="cur0" x="0" y="${T-40}" width="2" height="${4*s+96}" rx="1" visibility="hidden"/>`;
-  for(let i=0;i<5;i++)h+=`<line class="st" x1="6" x2="${W-8}" y1="${T+i*s}" y2="${T+i*s}"/>`;
-  h+=`<rect class="beam" x="11" y="${T+s}" width="3" height="${2*s}"/><rect class="beam" x="17" y="${T+s}" width="3" height="${2*s}"/>`;
-  h+=`<text class="ts" x="33" y="${T+2*s-2}">4</text><text class="ts" x="33" y="${T+4*s-2}">4</text>`;
+  h+=`<rect class="startmark" id="startMark" x="0" y="0" width="${r1(barW)}" height="${sysH}" visibility="hidden"/>`;
+  h+=`<rect class="cursor" id="cur0" x="0" y="0" width="2" height="${4*s+92}" rx="1" visibility="hidden"/>`;
+  for(let r=0;r<rows;r++){
+    const T=r*sysH+KIT_T,cols=Math.min(perRow,P.bars-r*perRow),xe=x0+cols*barW;
+    for(let i=0;i<5;i++)h+=`<line class="st" x1="6" x2="${r1(xe)}" y1="${T+i*s}" y2="${T+i*s}"/>`;
+    h+=`<rect class="beam" x="10" y="${T+s}" width="3" height="${2*s}"/><rect class="beam" x="16" y="${T+s}" width="3" height="${2*s}"/>`;
+    if(r===0)h+=`<text class="ts" x="29" y="${T+2*s-2}">4</text><text class="ts" x="29" y="${T+4*s-2}">4</text>`;
+  }
   song.bars.forEach((bar,b)=>{
-    const bx=x0+b*barW,sub=bar.grid/4,xOf=pos=>bx+16+(pos-b*4)/4*(barW-30);
-    geo.push({xOf});
+    const row=Math.floor(b/perRow),col=b%perRow,top=row*sysH,T=top+KIT_T,upTop=T-26;
+    const yOf=inst=>T+KIT[inst].st*s/2;
+    const bx=x0+col*barW,sub=bar.grid/4,xOf=pos=>bx+14+(pos-b*4)/4*(barW-26);
+    geo.push({xOf,row,top,bx,T});
     h+=b===P.bars-1
-      ?`<line class="bl" x1="${bx+barW-5}" x2="${bx+barW-5}" y1="${T}" y2="${T+4*s}"/><rect class="beam" x="${bx+barW-3}" y="${T}" width="3" height="${4*s}"/>`
-      :`<line class="bl" x1="${bx+barW}" x2="${bx+barW}" y1="${T}" y2="${T+4*s}"/>`;
-    h+=`<text class="barno" x="${bx+3}" y="${T-46}">${b+1}</text>`;
-    if(bar.label)h+=`<text class="sect" x="${bx+18}" y="${T-46}">${esc(bar.label)}</text>`;
-    if(b===0||bar.bpm!==song.bars[b-1].bpm)h+=`<text class="tempo-mk" x="${bx+3}" y="${T-61}">♩ = ${bar.bpm}</text>`;
+      ?`<line class="bl" x1="${r1(bx+barW-5)}" x2="${r1(bx+barW-5)}" y1="${T}" y2="${T+4*s}"/><rect class="beam" x="${r1(bx+barW-3)}" y="${T}" width="3" height="${4*s}"/>`
+      :`<line class="bl" x1="${r1(bx+barW)}" x2="${r1(bx+barW)}" y1="${T}" y2="${T+4*s}"/>`;
+    h+=`<text class="barno" x="${r1(bx+3)}" y="${T-44}">${b+1}</text>`; // 마디 번호·섹션·템포는 맨 윗줄 한 줄에
+    if(bar.label)h+=`<text class="sect" x="${r1(bx+20)}" y="${T-44}">${esc(bar.label)}</text>`;
+    if(b===0||bar.bpm!==song.bars[b-1].bpm)h+=`<text class="tempo-mk" x="${r1(bx+barW-6)}" y="${T-44}" text-anchor="end">♩ = ${bar.bpm}</text>`;
     for(let beat=0;beat<4;beat++){
       const base=beat*sub,xs=k=>xOf(b*4+(base+k)/sub),handHits=[],kickHits=[];
       for(let k=0;k<sub;k++){
@@ -586,7 +595,7 @@ function renderKit(P){
         if(!insts.length)continue;
         let g=insts.map(i=>kitHead(i,hit[i],x,yOf(i),T,s)).join('');
         if(insts.some(i=>/[A-Z]/.test(hit[i])))g+=`<path class="acc" d="M${r1(x-4)} ${upTop-12.5} L${r1(x+5)} ${upTop-9} L${r1(x-4)} ${upTop-5.5}"/>`;
-        hands.forEach((hd,n)=>{g+=`<text class="stk" x="${r1(x)}" y="${T+4*s+38+n*13}">${hd}</text>`});
+        hands.forEach((hd,n)=>{g+=`<text class="stk" x="${r1(x)}" y="${T+4*s+28+n*11}">${hd}</text>`});
         h+=`<g class="note" data-k="${b}-${slot}">${g}</g>`;
       }
       const hr=reduceBeat(handHits,sub),hm=j=>j*sub/hr.s;
@@ -599,11 +608,18 @@ function renderKit(P){
   svg.innerHTML=h;
   noteEls=cur.notes.map(n=>svg.querySelector(`g.note[data-k="${n.k}"]`));
   curEls=[svg.querySelector('#cur0')];
-  markStart();
+  kitRow=-1;markStart();
 }
 function markStart(){
-  const m=$('#startMark');if(!m)return;
-  m.setAttribute('x',KIT_X0+S.kitStart*KIT_BARW);m.setAttribute('visibility',S.kitStart?'visible':'hidden');
+  const m=$('#startMark'),g=geo[S.kitStart];if(!m||!g)return;
+  m.setAttribute('x',r1(g.bx));m.setAttribute('y',g.top);m.setAttribute('visibility',S.kitStart?'visible':'hidden');
+}
+// 지금 줄을 맨 위로 부드럽게 올려서, 다음 줄이 아래에 미리 보이게
+let kitRow=-1;
+function showKitRow(row,smooth){
+  if(row===kitRow)return;kitRow=row;
+  const w=$('#staffWrap'),top=Math.max(0,row*kitLay.sysH-4);
+  try{w.scrollTo({top,behavior:smooth&&!matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'auto'})}catch(e){w.scrollTop=top}
 }
 function renderStaff(){
   const isKit=cur.pattern&&cur.pattern.kind==='kit';
@@ -643,9 +659,10 @@ function paint(e){
 }
 function clearPaint(){noteEls.forEach(el=>el&&el.classList.remove('ok','bad'))}
 function moveCursor(b,x){
-  if(cur.pattern&&cur.pattern.kind==='kit'){ // 한 줄 악보: 커서를 화면 왼쪽 30% 자리에 두고 악보가 흘러가요
-    const el=curEls[0];if(el){el.setAttribute('x',r1(x-1));el.setAttribute('visibility','visible')}
-    const w=$('#staffWrap');w.scrollLeft=x-w.clientWidth*.3;return;
+  if(cur.pattern&&cur.pattern.kind==='kit'){ // 줄 악보: 커서가 줄을 따라가고, 줄이 바뀌면 한 줄 넘김
+    const el=curEls[0],g=geo[b];
+    if(el&&g){el.setAttribute('x',r1(x-1));el.setAttribute('y',g.T-38);el.setAttribute('visibility','visible')}
+    if(g)showKitRow(g.row,true);return;
   }curEls.forEach((el,i)=>{if(!el)return;if(i===b){el.setAttribute('x',r1(x-1));el.setAttribute('visibility','visible')}else el.setAttribute('visibility','hidden')})}
 function hideCursors(){curEls.forEach(el=>el&&el.setAttribute('visibility','hidden'))}
 const beatEls=[...document.querySelectorAll('#beats i')];
@@ -809,6 +826,7 @@ function startRun(){
     // 마디마다 템포가 다를 수 있어요: 마디 시작 시각표를 만들어 박 위치 ↔ 시각을 바꿔요
     const fac=S.kitBpm/P.song.bpm,bars=P.song.bars,sb=S.kitStart,bspb=bars.map(b=>60/(b.bpm*fac));
     off=sb*4;reps=1;firstBeat=-4;spb=bspb[sb];t0=startCtx+4*spb;
+    kitRow=-1;if(geo[sb])showKitRow(geo[sb].row,true); // 카운트 동안 시작 줄을 맨 위로
     const bt=[];let tt=t0;for(let b=sb;b<bars.length;b++){bt[b]=tt;tt+=4*bspb[b]}
     tAt=pos=>{const b=clamp(Math.floor(pos/4+1e-9),sb,bars.length-1);return bt[b]+(pos-b*4)*bspb[b]};
     posAt=x=>{let lo=sb,hi=bars.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(bt[m]<=x)lo=m;else hi=m-1}return lo*4+(x-bt[lo])/bspb[lo]};
@@ -1227,8 +1245,9 @@ $('#pickPattern').addEventListener('click',()=>S.mode==='kit'?openKitSheet():ope
 // 한 줄 악보에서 마디를 누르면 거기서부터 시작
 $('#staffWrap').addEventListener('click',e=>{
   if(S.mode!=='kit'||run||calib||!cur.pattern||cur.pattern.kind!=='kit')return;
-  const x=e.clientX-$('#staff').getBoundingClientRect().left;
-  S.kitStart=clamp(Math.floor((x-KIT_X0)/KIT_BARW),0,cur.pattern.bars-1);
+  const r=$('#staff').getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  const row=Math.floor(y/kitLay.sysH),col=clamp(Math.floor((x-kitLay.x0)/kitLay.barW),0,kitLay.perRow-1);
+  S.kitStart=clamp(row*kitLay.perRow+col,0,cur.pattern.bars-1);
   markStart();kitMeta();hideResult();clearPaint();
 });
 function loadKit(json,save){
@@ -1236,7 +1255,7 @@ function loadKit(json,save){
   try{song=parseSong(json)}catch(err){toast('악보 파일 오류: '+err.message);return false}
   finish(false);kitJson=json;S.kitStart=0;S.kitBpm=song.bpm;store.set('kitBpm',S.kitBpm);store.set('kitCur',json);
   if(save){const list=store.get('kitSongs',[]).filter(s=>s.title!==song.title);list.unshift(json);store.set('kitSongs',list.slice(0,30))}
-  updateTempo();setPattern(buildKit(song));$('#staffWrap').scrollLeft=0;
+  updateTempo();setPattern(buildKit(song));$('#staffWrap').scrollTop=0;
   return true;
 }
 function openKitSheet(){
