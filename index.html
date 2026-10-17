@@ -155,7 +155,7 @@ button{cursor:pointer}
 .ctl button{height:36px;min-width:36px;padding:0 10px;border-radius:10px;border:1px solid var(--rule);background:transparent;font:500 14px var(--f-latin)}
 .ctl output{font:400 22px var(--f-num);font-variant-numeric:tabular-nums;min-width:3.4ch;text-align:center}
 .seg{display:flex;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
-.seg button{border:0;background:none;height:34px;min-width:40px;font:500 14px var(--f-latin);border-left:1px solid var(--rule)}
+.seg button{border:0;background:none;height:34px;min-width:40px;padding:0 10px;white-space:nowrap;font:500 14px var(--f-latin);border-left:1px solid var(--rule)}
 .seg button:first-child{border-left:0}
 .seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
 .sw{appearance:none;-webkit-appearance:none;width:44px;height:26px;border-radius:13px;background:var(--rule);position:relative;flex:none;cursor:pointer;transition:background .15s;margin:0}
@@ -236,7 +236,8 @@ const store={
 const S={mode:'rudiment',bpm:store.get('bpm',80),reps:store.get('reps',2),
   rud:'para',level:2,songPat:'r:single8',
   metro:store.get('metro',true),guide:store.get('guide',false),hint:store.get('hint',true),
-  speedup:store.get('speedup',false),lat:store.get('lat',0.04)};
+  speedup:store.get('speedup',false),lat:store.get('lat',0.04),
+  padSound:store.get('padSound','off'),vibe:store.get('vibe',true)};
 
 const ICON={
   play:'<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M7 4.5v13l11-6.5z" fill="currentColor"/></svg>',
@@ -420,18 +421,23 @@ function synthHit(ac,noise,out,t,hand,vol,soft){
 }
 // 패드 소리는 미리 녹음해 두고 누를 때 버퍼 하나만 재생해요 (누르는 순간 처리량을 최소로)
 async function prerenderTaps(){
-  for(const h of ['L','R']){
+  for(const h of ['L','R','tick']){
     try{
       const sr=ctx.sampleRate,oc=new OfflineAudioContext(1,Math.ceil(sr*.17),sr);
       const nb=oc.createBuffer(1,noiseBuf.length,sr);nb.getChannelData(0).set(noiseBuf.getChannelData(0));
-      synthHit(oc,nb,oc.destination,0,h,.6,false);
+      if(h==='tick'){ // 아주 짧고 가벼운 틱
+        const s=oc.createBufferSource();s.buffer=nb;const f=oc.createBiquadFilter();f.type='highpass';f.frequency.value=4500;
+        const g=oc.createGain();g.gain.setValueAtTime(.5,0);g.gain.exponentialRampToValueAtTime(.001,.025);
+        s.connect(f);f.connect(g);g.connect(oc.destination);s.start(0);s.stop(.03);
+      }else synthHit(oc,nb,oc.destination,0,h,.6,false);
       tapBuf[h]=await oc.startRendering();
     }catch(e){}
   }
 }
 function playTap(hand){
-  const b=tapBuf[hand];
-  if(!b){playHit(ctx.currentTime,hand,.6,false);return}
+  if(S.padSound==='off')return;
+  const b=tapBuf[S.padSound==='tick'?'tick':hand];
+  if(!b){if(S.padSound==='snare')playHit(ctx.currentTime,hand,.6,false);return}
   const s=ctx.createBufferSource();s.buffer=b;s.connect(pans[hand]);s.start(0);
 }
 function playHit(t,hand,vol,soft){synthHit(ctx,noiseBuf,pans[hand],t,hand,vol,soft)}
@@ -586,7 +592,7 @@ function hit(hand,ts){
   ensureAudio();
   const d=ts!=null?(performance.now()-ts)/1000:0,at=ctx.currentTime-(d>=0&&d<.1?d:0);
   playTap(hand);padFx(hand,'hit');
-  try{navigator.vibrate&&navigator.vibrate(8)}catch(e){}
+  if(S.vibe)try{navigator.vibrate&&navigator.vibrate(8)}catch(e){}
   if(calib){calib.taps.push(at);return}
   const R=run;if(!R)return;
   // 판정 창 안의 음표 중 같은 손 음표를 먼저 찾아요. 빠른 템포에서 살짝 어긋나도 옆 음표(반대 손)로 오판하지 않게.
@@ -712,6 +718,8 @@ function openSettings(){
   const sw=(id,on,t,s)=>`<label class="field"><span>${t}<small>${s}</small></span><input type="checkbox" class="sw" id="${id}"${on?' checked':''}></label>`;
   const html=head('연습 설정')+
     `<div class="field"><span>반복<small>노래 모드에서는 곡 끝까지</small></span><div class="seg" id="segReps">${[1,2,4,8,0].map(v=>`<button data-v="${v}" aria-pressed="${S.reps===v}">${v||'∞'}</button>`).join('')}</div></div>`+
+    `<div class="field"><span>패드 소리<small>칠 때 나는 소리. 끄면 박자 클릭만 들려요</small></span><div class="seg" id="segPad">${[['off','끔'],['tick','틱'],['snare','스네어']].map(([v,l])=>`<button data-v="${v}" aria-pressed="${S.padSound===v}">${l}</button>`).join('')}</div></div>`+
+    sw('optVibe',S.vibe,'진동','칠 때 짧게 진동 (안드로이드)')+
     sw('optMetro',S.metro,'메트로놈 클릭','시작 전 카운트 4번은 항상 들려요')+
     sw('optGuide',S.guide,'패턴 소리 같이 듣기','쳐야 할 음을 앱이 작게 같이 쳐줘요')+
     sw('optHint',S.hint,'다음 손 힌트','다음에 칠 패드에 점이 켜져요')+
@@ -720,7 +728,8 @@ function openSettings(){
     `<input type="range" id="latRange" min="-50" max="300" step="5" value="${Math.round(S.lat*1000)}" aria-label="지연 보정 값"><button class="btn" id="btnCalib">클릭 듣고 자동 보정</button></div>`;
   openSheet('settings',html,b=>{
     b.querySelectorAll('#segReps button').forEach(x=>x.addEventListener('click',()=>{S.reps=+x.dataset.v;store.set('reps',S.reps);b.querySelectorAll('#segReps button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)))}));
-    [['optMetro','metro'],['optGuide','guide'],['optHint','hint'],['optSpeed','speedup']].forEach(([id,k])=>{
+    b.querySelectorAll('#segPad button').forEach(x=>x.addEventListener('click',()=>{S.padSound=x.dataset.v;store.set('padSound',S.padSound);b.querySelectorAll('#segPad button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));if(S.padSound!=='off'){ensureAudio();playTap('R')}}));
+    [['optVibe','vibe'],['optMetro','metro'],['optGuide','guide'],['optHint','hint'],['optSpeed','speedup']].forEach(([id,k])=>{
       const el=b.querySelector('#'+id);el.addEventListener('change',()=>{S[k]=el.checked;store.set(k,S[k]);if(k==='hint'&&!S.hint)setNext(null)});
     });
     b.querySelector('#latRange').addEventListener('input',e=>{S.lat=+e.target.value/1000;store.set('lat',S.lat);b.querySelector('#latOut').textContent=Math.round(S.lat*1000)+'ms'});
