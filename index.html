@@ -181,6 +181,33 @@ button{cursor:pointer}
 input[type=range]{accent-color:var(--signal);width:100%}
 .row2{display:flex;gap:8px}
 .vh{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+/* PDF 확인·수정 화면 */
+.review{position:fixed;inset:0;z-index:20;background:var(--bg);padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.rv-in{max-width:520px;height:100%;margin:0 auto;overflow-y:auto;display:flex;flex-direction:column;gap:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:8px 16px}
+.rv-head{display:flex;align-items:center;gap:8px;min-height:44px}
+.rv-head h2{margin:0;font-size:17px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rv-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rv-nav output{font:400 24px var(--f-num);font-variant-numeric:tabular-nums;min-width:6.5ch;text-align:center}
+.rv-flag{font-size:12px;font-weight:600;padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.rv-flag.info{background:var(--pad);color:var(--muted)}
+.rv-card{background:var(--raise);border:1px solid var(--rule);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.rv-cap{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font:600 11px var(--f-latin);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.rv-cap select,.rv-cap input{height:30px;border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--ink);font:500 13px var(--f-latin);padding:0 6px;text-transform:none;letter-spacing:0}
+.rv-cap input{width:64px}
+.rv-src{background:#fff;border-radius:8px;min-height:60px;display:grid;place-items:center;overflow:hidden}
+.rv-src canvas{display:block;width:100%;height:auto}
+.rv-src p{color:#777;font-size:12px;margin:0;padding:16px}
+#rvSvg{display:block;width:100%;height:auto}
+.rv-grid{overflow-x:auto}
+.rv-grid table{border-collapse:collapse;width:100%;table-layout:fixed;min-width:calc(var(--cols)*15px + 44px)}
+.rv-grid th{width:44px;font:500 11px var(--f-body);color:var(--muted);text-align:left;padding-right:4px;white-space:nowrap}
+.rv-grid td{height:28px;border:1px solid var(--rule);text-align:center;font:700 12px var(--f-latin);cursor:pointer;padding:0;user-select:none;-webkit-user-select:none}
+.rv-grid td.beat{border-left:2px solid var(--muted)}
+.rv-grid td.on{background:var(--ink);color:var(--bg)}
+.rv-grid td.acc{background:var(--signal);color:#fff}
+.rv-grid td.soft{background:var(--pad-press);color:var(--ink)}
+.rv-foot{position:sticky;bottom:0;padding-top:8px;background:linear-gradient(transparent,var(--bg) 30%)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -239,6 +266,7 @@ input[type=range]{accent-color:var(--signal);width:100%}
 <input type="file" id="fileSong" accept="audio/*" class="vh" tabindex="-1" aria-hidden="true">
 <input type="file" id="fileKit" accept=".pdf,application/pdf,.json,application/json" class="vh" tabindex="-1" aria-hidden="true">
 <div class="sheet-back" id="sheet" hidden><div class="sheet" id="sheetBody" role="dialog" aria-modal="true"></div></div>
+<div class="review" id="review" role="dialog" aria-modal="true" aria-label="악보 확인" hidden></div>
 
 <script>
 (()=>{
@@ -559,15 +587,17 @@ function kitHead(inst,c,x,y,T,s){
 // 드럼 악보는 실제 악보처럼 줄을 쌓아요: 화면 폭에 맞춰 한 줄에 마디 몇 개, 연습 중에는 한 줄씩 위로 넘김
 const KIT_X0=38,KIT_MINBAR=290,KIT_T=56,KIT_S=8,KIT_SYSH=131;
 let kitLay={perRow:1,barW:300,x0:KIT_X0,sysH:KIT_SYSH};
-function renderKit(P){
-  const svg=$('#staff'),song=P.song,s=KIT_S,x0=KIT_X0,sysH=KIT_SYSH;
-  const avail=Math.max(300,Math.floor($('#staffWrap').clientWidth));
+// 드럼 악보 SVG 내용을 만들어요. 연습 화면(renderKit)과 PDF 확인 화면(한 마디 미리보기)이 함께 써요
+function kitMarkup(P,avail,opt={}){
+  const song=P.song,s=KIT_S,x0=KIT_X0,sysH=KIT_SYSH;
   const perRow=Math.max(1,Math.floor((avail-x0-6)/KIT_MINBAR)),barW=(avail-x0-6)/perRow;
   const rows=Math.ceil(P.bars/perRow),W=avail,H=rows*sysH+8;
-  kitLay={perRow,barW,x0,sysH};
-  let h='';geo=[];
-  h+=`<rect class="startmark" id="startMark" x="0" y="0" width="${r1(barW)}" height="${sysH}" visibility="hidden"/>`;
-  h+=`<rect class="cursor" id="cur0" x="0" y="0" width="2" height="${4*s+92}" rx="1" visibility="hidden"/>`;
+  const lay={perRow,barW,x0,sysH};
+  let h='';const geo=[];
+  if(!opt.bare){
+    h+=`<rect class="startmark" id="startMark" x="0" y="0" width="${r1(barW)}" height="${sysH}" visibility="hidden"/>`;
+    h+=`<rect class="cursor" id="cur0" x="0" y="0" width="2" height="${4*s+92}" rx="1" visibility="hidden"/>`;
+  }
   for(let r=0;r<rows;r++){
     const T=r*sysH+KIT_T,cols=Math.min(perRow,P.bars-r*perRow),xe=x0+cols*barW;
     for(let i=0;i<5;i++)h+=`<line class="st" x1="6" x2="${r1(xe)}" y1="${T+i*s}" y2="${T+i*s}"/>`;
@@ -582,7 +612,7 @@ function renderKit(P){
     h+=b===P.bars-1
       ?`<line class="bl" x1="${r1(bx+barW-5)}" x2="${r1(bx+barW-5)}" y1="${T}" y2="${T+4*s}"/><rect class="beam" x="${r1(bx+barW-3)}" y="${T}" width="3" height="${4*s}"/>`
       :`<line class="bl" x1="${r1(bx+barW)}" x2="${r1(bx+barW)}" y1="${T}" y2="${T+4*s}"/>`;
-    h+=`<text class="barno" x="${r1(bx+3)}" y="${T-44}">${b+1}</text>`; // 마디 번호·섹션·템포는 맨 윗줄 한 줄에
+    h+=`<text class="barno" x="${r1(bx+3)}" y="${T-44}">${opt.barNo?opt.barNo(b):b+1}</text>`; // 마디 번호·섹션·템포는 맨 윗줄 한 줄에
     if(bar.label)h+=`<text class="sect" x="${r1(bx+20)}" y="${T-44}">${esc(bar.label)}</text>`;
     if(b===0||bar.bpm!==song.bars[b-1].bpm)h+=`<text class="tempo-mk" x="${r1(bx+barW-6)}" y="${T-44}" text-anchor="end">♩ = ${bar.bpm}</text>`;
     for(let beat=0;beat<4;beat++){
@@ -604,8 +634,13 @@ function renderKit(P){
       if(kickHits.length){const kr=reduceBeat(kickHits,sub);h+=drawVoice(kr.s,kr.h,j=>xs(j*sub/kr.s),{up:false,stemEnd:T+4*s+18,rests:false,headY:()=>yOf('bd')})}
     }
   });
-  svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('width',W);svg.setAttribute('height',H);
-  svg.innerHTML=h;
+  return {h,W,H,geo,lay};
+}
+function renderKit(P){
+  const svg=$('#staff'),m=kitMarkup(P,Math.max(300,Math.floor($('#staffWrap').clientWidth)));
+  kitLay=m.lay;geo=m.geo;
+  svg.setAttribute('viewBox',`0 0 ${m.W} ${m.H}`);svg.setAttribute('width',m.W);svg.setAttribute('height',m.H);
+  svg.innerHTML=m.h;
   noteEls=cur.notes.map(n=>svg.querySelector(`g.note[data-k="${n.k}"]`));
   curEls=[svg.querySelector('#cur0')];
   kitRow=-1;markStart();
@@ -1282,7 +1317,7 @@ function ensurePdf(){
   if(!pdfReady)pdfReady=(async()=>{
     await loadScript(PDFJS+'pdf.min.js');
     window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js';
-    await loadScript('pdf-import.js?v=2');
+    await loadScript('pdf-import.js?v=3');
     return window.pdfjsLib;
   })().catch(err=>{pdfReady=null;throw err});
   return pdfReady;
@@ -1292,14 +1327,136 @@ async function importPdf(f){
   overlay('PDF 악보를 읽는 중…',true);
   try{
     const lib=await ensurePdf();
-    const res=await window.DrumPdf.parseDrumPdf(lib,new Uint8Array(await f.arrayBuffer()),{onProgress:(p,n)=>overlay(`PDF 악보를 읽는 중… ${p}/${n}쪽`,true)});
+    const res=await window.DrumPdf.parseDrumPdf(lib,new Uint8Array(await f.arrayBuffer()),{keepDoc:true,onProgress:(p,n)=>overlay(`PDF 악보를 읽는 중… ${p}/${n}쪽`,true)});
     overlay('');
     const hasNotes=res.song.bars.some(b=>Object.keys(b).some(k=>KIT[k]));
-    if(!hasNotes){toast('이 PDF에서 드럼 악보를 찾지 못했어요. 스캔·사진 PDF는 아직 못 읽어요');return}
+    if(!hasNotes){if(res.doc)res.doc.destroy();toast('이 PDF에서 드럼 악보를 찾지 못했어요. 스캔·사진 PDF는 아직 못 읽어요');return}
     if(!res.song.title||res.song.title==='불러온 악보')res.song.title=f.name.replace(/\.[^.]+$/,'');
-    if(loadKit(res.song,true))toast(`${res.measures}마디를 읽었어요${res.repeats?` (도돌이표 펼쳐서 ${res.played}마디)`:''}${res.warnings.length?` · ${res.warnings.length}곳은 원본과 비교해 주세요`:''}`);
+    try{parseSong(res.song)}catch(err){if(res.doc)res.doc.destroy();toast('악보 변환 오류: '+err.message);return}
+    openReview(res); // 바로 연습하지 않고 원본과 비교·수정부터
+    toast(`${res.measures}마디를 읽었어요${res.repeats?` (도돌이표 펼쳐서 ${res.played}마디)`:''}${res.warnings.length?` · ${res.warnings.length}곳은 원본과 비교해 주세요`:''}`);
   }catch(err){overlay('');toast('PDF를 읽지 못했어요: '+(err&&err.message||err))}
 }
+/* ---------- PDF 확인·수정 화면 ----------
+   마디마다 원본 PDF 조각, 읽은 결과 악보, 고치기 격자를 나란히 보여줘요.
+   도돌이표로 반복되는 마디는 같은 원본 마디라서 한 곳을 고치면 함께 바뀌어요. */
+const RV_LANES=[['cr','크래시'],['hh','하이햇'],['rd','라이드'],['t1','하이탐'],['t2','미드탐'],['sd','스네어'],['ft','플로어탐'],['bd','킥']];
+const RV_CYCLE={hh:['-','x','o','X'],bd:['-','x'],sd:['-','x','X','g']};
+const RV_SHOW={x:'●',X:'>',o:'○',O:'○',g:'(·)'};
+let RV=null;
+function laneArr(bar,inst){const g=bar.grid||16,s=String(bar[inst]||'').replace(/[\s|]/g,''),a=[];for(let k=0;k<g;k++){const c=s[k];a.push(c&&c!=='.'?c:'-')}return a}
+function setLane(bar,inst,arr){if(arr.every(c=>c==='-')){delete bar[inst];return}const per=(bar.grid||16)/4;bar[inst]=arr.join('').match(new RegExp(`.{1,${per}}`,'g')).join(' ')}
+function rvEffBpm(i){for(let k=i;k>=0;k--)if(RV.draft.bars[k].bpm)return RV.draft.bars[k].bpm;return RV.draft.bpm||100}
+// 같은 원본 마디를 가리키는 다른 연주 마디에 그대로 복사
+function rvSyncTwins(i){
+  const src=RV.res.sources,b=RV.draft.bars[i];
+  src.forEach((s,k)=>{
+    if(k===i||s.printed!==src[i].printed)return;
+    const t=RV.draft.bars[k];t.grid=b.grid;
+    for(const [inst] of RV_LANES){if(b[inst])t[inst]=b[inst];else delete t[inst]}
+  });
+}
+function openReview(res){
+  RV={res,draft:JSON.parse(JSON.stringify(res.song)),i:0,pages:new Map(),
+    flags:res.sources.map((s,k)=>s.fuzzy||s.empty?k:-1).filter(k=>k>=0)};
+  const el=$('#review');el.hidden=false;
+  el.innerHTML=`<div class="rv-in">
+    <div class="rv-head"><button class="txt" data-rv="cancel">취소</button><h2>${esc(res.song.title)} 확인</h2><button class="btn primary" style="flex:none;height:38px" data-rv="done">연습 시작</button></div>
+    <p class="note">원본과 다른 칸만 눌러서 고치세요. ${res.repeats?'반복되는 마디는 함께 바뀌어요. ':''}${RV.flags.length?`확인이 필요한 마디 ${RV.flags.length}곳을 표시했어요.`:'확인이 필요한 마디는 없어요.'}</p>
+    <div class="rv-nav"><button class="step" data-rv="prev" aria-label="이전 마디">‹</button><output id="rvPos"></output><button class="step" data-rv="next" aria-label="다음 마디">›</button>
+      <span class="rv-flag" id="rvFlag" hidden></span>${RV.flags.length?'<button class="txt" style="margin-left:auto" data-rv="flag">확인 필요 다음 ›</button>':''}</div>
+    <div class="rv-card"><div class="rv-cap" id="rvSrcCap">원본 PDF</div><div class="rv-src" id="rvSrc"><canvas id="rvCanvas"></canvas></div></div>
+    <div class="rv-card"><div class="rv-cap">읽은 결과</div><svg id="rvSvg" role="img" aria-label="읽은 결과 악보"></svg></div>
+    <div class="rv-card"><div class="rv-cap">고치기
+        <label>칸 <select id="rvGrid">${[8,12,16,24,48].map(g=>`<option value="${g}">${g}</option>`).join('')}</select></label>
+        <label>템포 <input type="number" id="rvBpm" min="30" max="300" inputmode="numeric"></label></div>
+      <div class="rv-grid" id="rvGridBox"></div>
+      <p class="note">칸을 누를 때마다 침 → 악센트 → 비움 (하이햇은 오픈 ○, 스네어는 고스트 (·)도)</p>
+      <div class="row2"><button class="btn" data-rv="clear">이 마디 비우기</button><button class="btn" data-rv="copy">앞 마디와 같게</button></div></div>
+  </div>`;
+  rvShow();
+}
+function closeReview(){if(RV&&RV.res.doc){try{RV.res.doc.destroy()}catch(e){}}RV=null;const el=$('#review');el.hidden=true;el.innerHTML=''}
+function rvShow(){
+  const i=RV.i,s=RV.res.sources[i],bar=RV.draft.bars[i],n=RV.draft.bars.length;
+  $('#rvPos').textContent=`${i+1} / ${n}`;
+  const fl=$('#rvFlag');fl.hidden=!(s.fuzzy||s.empty);fl.className='rv-flag'+(s.fuzzy?'':' info');fl.textContent=s.fuzzy?'박자 확인 필요':'빈 마디';
+  $('#rvSrcCap').textContent=`원본 PDF · ${s.page}쪽 · 악보의 ${s.printed}마디${s.copied?' (반복 기호로 복사)':''}`;
+  $('#rvGrid').value=String(bar.grid||16);$('#rvBpm').value=rvEffBpm(i);
+  rvDrawResult();rvDrawGrid();rvDrawSource(i);
+}
+function rvDrawResult(){
+  const i=RV.i,bar=JSON.parse(JSON.stringify(RV.draft.bars[i]));delete bar.label;
+  const svg=$('#rvSvg');
+  try{
+    const P=buildKit(parseSong({title:'',bpm:rvEffBpm(i),bars:[{...bar,bpm:rvEffBpm(i)}]}));
+    const w=Math.max(300,Math.floor(svg.parentElement.clientWidth-20)),m=kitMarkup(P,w,{bare:true,barNo:()=>RV.res.sources[i].printed});
+    svg.setAttribute('viewBox',`0 0 ${m.W} ${m.H}`);svg.innerHTML=m.h;
+  }catch(err){svg.innerHTML=''}
+}
+function rvDrawGrid(){
+  const bar=RV.draft.bars[RV.i],g=bar.grid||16,per=g/4;
+  let t=`<table style="--cols:${g}"><tbody>`;
+  for(const [inst,name] of RV_LANES){
+    const a=laneArr(bar,inst);
+    t+=`<tr><th>${name}</th>`+a.map((c,k)=>{const cls=[k%per===0?'beat':'',c==='-'?'':(/[A-Z]/.test(c)&&inst!=='bd'?'acc':(c==='g'||c==='o'?'soft':'on'))].join(' ');
+      return `<td class="${cls}" data-l="${inst}" data-k="${k}" aria-label="${name} ${k+1}칸">${c==='-'?'':(RV_SHOW[c]||'●')}</td>`}).join('')+'</tr>';
+  }
+  $('#rvGridBox').innerHTML=t+'</tbody></table>';
+}
+async function rvDrawSource(i){
+  const s=RV.res.sources[i],box=$('#rvSrc'),doc=RV.res.doc;
+  if(!doc||!s.page){box.innerHTML='<p>원본을 표시할 수 없어요</p>';return}
+  const scale=2.5;let pc=RV.pages.get(s.page);
+  try{
+    if(!pc){
+      const page=await doc.getPage(s.page),vp=page.getViewport({scale});
+      pc=document.createElement('canvas');pc.width=Math.ceil(vp.width);pc.height=Math.ceil(vp.height);
+      const g=pc.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,pc.width,pc.height);
+      await page.render({canvasContext:g,viewport:vp}).promise;
+      if(!RV)return;
+      RV.pages.set(s.page,pc);
+      if(RV.pages.size>2){const k=RV.pages.keys().next().value,old=RV.pages.get(k);old.width=old.height=0;RV.pages.delete(k)} // 폰 메모리 아끼기: 최근 2쪽만
+    }
+  }catch(err){box.innerHTML='<p>원본을 그리지 못했어요</p>';return}
+  if(!RV||RV.i!==i)return;
+  const x0=Math.max(0,s.L-8),x1=s.R+8,y0=Math.max(0,s.top-s.sp*9),y1=s.bottom+s.sp*7;
+  const w=Math.round((x1-x0)*scale),h=Math.round((y1-y0)*scale);
+  box.innerHTML='<canvas id="rvCanvas"></canvas>';
+  const cv=$('#rvCanvas');cv.width=w;cv.height=h;cv.getContext('2d').drawImage(pc,x0*scale,y0*scale,w,h,0,0,w,h);
+}
+function rvEdit(fn){fn(RV.draft.bars[RV.i]);rvSyncTwins(RV.i);rvDrawResult();rvDrawGrid()}
+$('#review').addEventListener('click',e=>{
+  if(!RV)return;
+  const cell=e.target.closest('td[data-l]');
+  if(cell){
+    const inst=cell.dataset.l,k=+cell.dataset.k,cyc=RV_CYCLE[inst]||['-','x','X'];
+    rvEdit(bar=>{const a=laneArr(bar,inst),c=a[k],idx=cyc.indexOf(c);a[k]=cyc[(idx+1)%cyc.length]||'-';setLane(bar,inst,a)});
+    return;
+  }
+  const a=e.target.closest('[data-rv]');if(!a)return;
+  const n=RV.draft.bars.length;
+  switch(a.dataset.rv){
+    case 'prev':RV.i=(RV.i-1+n)%n;rvShow();break;
+    case 'next':RV.i=(RV.i+1)%n;rvShow();break;
+    case 'flag':{const f=RV.flags.find(k=>k>RV.i);RV.i=f!=null?f:RV.flags[0];rvShow();break}
+    case 'clear':rvEdit(bar=>{for(const [inst] of RV_LANES)delete bar[inst]});break;
+    case 'copy':if(RV.i>0)rvEdit(bar=>{const p=RV.draft.bars[RV.i-1];bar.grid=p.grid;for(const [inst] of RV_LANES){if(p[inst])bar[inst]=p[inst];else delete bar[inst]}});break;
+    case 'cancel':closeReview();toast('PDF 불러오기를 취소했어요');break;
+    case 'done':{const song=RV.draft;closeReview();if(loadKit(song,true))toast(`'${song.title}' 악보를 저장하고 열었어요`);break}
+  }
+});
+$('#review').addEventListener('change',e=>{
+  if(!RV)return;
+  if(e.target.id==='rvGrid'){
+    const ng=+e.target.value;
+    rvEdit(bar=>{const og=bar.grid||16;if(og===ng)return;const lanes={};
+      for(const [inst] of RV_LANES){const a=laneArr(bar,inst),b=Array(ng).fill('-');a.forEach((c,k)=>{if(c!=='-'){const nk=Math.round(k*ng/og);if(nk<ng)b[nk]=c}});lanes[inst]=b}
+      bar.grid=ng;for(const [inst] of RV_LANES)setLane(bar,inst,lanes[inst])});
+  }else if(e.target.id==='rvBpm'){
+    const v=clamp(+e.target.value||0,30,300);RV.draft.bars[RV.i].bpm=v;e.target.value=v;rvDrawResult();
+  }
+});
 $('#fileKit').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
   if(/\.pdf$/i.test(f.name)||f.type==='application/pdf'){importPdf(f);return}

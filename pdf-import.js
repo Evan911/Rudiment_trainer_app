@@ -258,6 +258,7 @@
           // 2마디 반복 기호는 마디줄 위에 걸쳐 있어서 양옆 마디에 걸쳐요
           const repOnBar = gl.find(g => REPEAT2.has(g.code) && Math.abs(g.x + 7 - Rb) < st.sp * 3);
           const meas = { page: pn, heads, accents: [], open: [], tied: [], rep, rep2Right: !!repOnBar, bpm: null, label: null, L, R: Rb,
+            top: st.top, bottom: st.bottom, sp: st.sp,
             repStart: repeatAt(L) === 'start', repEnd: repeatAt(Rb) === 'end' };
           for (const t of stTempos) if (t.x >= L - st.sp * 6 && t.x < Rb - st.sp * 2 && meas.bpm == null) meas.bpm = t.bpm;
           if (mi === 0 && meas.bpm == null) { const t = stTempos.find(tt => tt.x < L + st.sp * 6); if (t) meas.bpm = t.bpm; }
@@ -280,7 +281,7 @@
             const x0 = Math.min(...cols);
             const unit = (Rb - x0 - st.sp * 0.35) / 4;
             const fit = fitPositions(heads.map(h => h.x), x0, unit);
-            if (fit.fuzzy) warnings.push(`${measures.length + 1}마디: 박자 위치가 애매해요. 원본과 비교해 주세요`);
+            if (fit.fuzzy) { meas.fuzzy = true; warnings.push(`${measures.length + 1}마디: 박자 위치가 애매해요. 원본과 비교해 주세요`); }
             heads.forEach((h, k) => meas.hits.push({ ...h, p48: fit.p48[k] }));
           }
           // 글자 지시('Ride →', 'Open H.H →')는 이 마디부터 다음 지시 전까지
@@ -352,7 +353,14 @@
     });
     if (bars.length && !bars[0].bpm) bars[0].bpm = opts.defaultBpm || 100;
     const repeats = played.length - out.length;
-    return { song: { title: title || '불러온 악보', bpm: bars[0] ? bars[0].bpm : 100, bars }, warnings, measures: out.length, played: played.length, repeats, debug: opts.debug ? out : undefined };
+    // 확인 화면용: 연주 순서의 각 마디가 원본 PDF 어디에서 왔는지 (반복·복사된 마디는 원래 마디를 가리켜요)
+    const sources = played.map(i => {
+      const m = out[i];
+      return { printed: i + 1, page: m.page, L: m.L, R: m.R, top: m.top, bottom: m.bottom, sp: m.sp, fuzzy: !!m.fuzzy, empty: !m.hits.length, copied: !!m.copied };
+    });
+    if (!opts.keepDoc) doc.destroy();
+    return { song: { title: title || '불러온 악보', bpm: bars[0] ? bars[0].bpm : 100, bars }, warnings, measures: out.length, played: played.length, repeats, sources,
+      doc: opts.keepDoc ? doc : undefined, debug: opts.debug ? out : undefined };
   }
 
   const api = { parseDrumPdf };
