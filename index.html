@@ -235,9 +235,18 @@ const store={
 
 const S={mode:'rudiment',bpm:store.get('bpm',80),reps:store.get('reps',2),
   rud:'para',level:2,songPat:'r:single8',
-  metro:store.get('metro',true),guide:store.get('guide',false),hint:store.get('hint',true),
-  speedup:store.get('speedup',false),lat:store.get('lat',0.04),
+  metro:store.get('metro',true),guide:store.get('guideOn',true),hint:store.get('hint',true),
+  speedup:store.get('speedup',false),
+  // 치는 자세마다 지연이 달라서 보정값을 따로 저장해요: thumb(폰 들고 엄지) / finger(폰 눕혀서 검지)
+  posture:store.get('posture','thumb'),lat:0.04,
   padSound:store.get('padSound','off'),vibe:store.get('vibe',true)};
+
+const POSTURES={thumb:'엄지 (폰 들고)',finger:'검지 (폰 눕혀서)'};
+const isCalibrated=()=>store.get('cal.'+S.posture,false);
+function loadLat(){S.lat=store.get('lat.'+S.posture,store.get('lat',0.04))}
+function setLat(v,calibrated){S.lat=clamp(v,-.05,.3);store.set('lat.'+S.posture,S.lat);if(calibrated)store.set('cal.'+S.posture,true)}
+function setPosture(p){S.posture=p;store.set('posture',p);loadLat()}
+loadLat();
 
 const ICON={
   play:'<svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M7 4.5v13l11-6.5z" fill="currentColor"/></svg>',
@@ -669,7 +678,8 @@ function hideResult(){$('#result').hidden=true}
 $('#result').addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
   if(a.dataset.act==='calib'){startCalib();return}
-  if(a.dataset.act==='fixlat'){S.lat=clamp(S.lat+latFix,-.05,.3);store.set('lat',S.lat);latFix=0;a.remove();toast(`지연 보정을 ${Math.round(S.lat*1000)}ms로 바꿨어요`)}
+  if(a.dataset.act==='skipcal'){store.set('skipCal.'+S.posture,true);hideResult();startRun();return}
+  if(a.dataset.act==='fixlat'){setLat(S.lat+latFix,true);latFix=0;a.remove();toast(`지연 보정을 ${Math.round(S.lat*1000)}ms로 바꿨어요`)}
   else if(a.dataset.act==='close'){hideResult();clearPaint()}
   else if(a.dataset.act==='new'){setPattern(patternForMode())}
   else{clearPaint();startRun()}
@@ -701,7 +711,7 @@ function startCalib(){
     const i=C.stages.indexOf(s);
     if(now<s.start){
       const left=Math.ceil((s.start-now)/C.spb);
-      overlay(`${i+1}/4 단계 · ${s.name}\n가이드 소리에 맞춰 아무 패드나 8번\n\n${left}`,true);
+      overlay(`${POSTURES[S.posture]} 자세로 측정\n${i+1}/4 단계 · ${s.name}\n가이드 소리에 맞춰 아무 패드나 8번\n\n${left}`,true);
     }else{
       const n=C.taps.filter(t=>t>=s.start-.2&&t<s.end).length;
       overlay(`${i+1}/4 단계 · ${s.name}\n${Math.min(n,8)} / 8`,true);
@@ -728,9 +738,9 @@ function finishCalib(){
       `<div class="res-actions"><button class="btn" data-act="close">닫기</button><button class="btn primary" data-act="calib">다시 측정</button></div>`;
     el.hidden=false;return;
   }
-  S.lat=clamp(med(all),-.05,.3);store.set('lat',S.lat);
+  setLat(med(all),true);
   const sd=Math.sqrt(all.reduce((s,d)=>s+(d-S.lat)**2,0)/all.length)*1000;
-  el.innerHTML=`<div class="res-top"><div class="res-score">${Math.round(S.lat*1000)}<small>ms</small></div><div><div class="res-head">지연 보정 완료</div><div class="res-sub">${all.length}번 탭 · 흔들림 ±${Math.round(sd)}ms</div></div></div>`+
+  el.innerHTML=`<div class="res-top"><div class="res-score">${Math.round(S.lat*1000)}<small>ms</small></div><div><div class="res-head">지연 보정 완료</div><div class="res-sub">${POSTURES[S.posture]} 자세로 저장 · ${all.length}번 탭 · 흔들림 ±${Math.round(sd)}ms</div></div></div>`+
     `<ul class="res-list">${per.map(p=>`<li>${p.name} ${p.ds.length?`${Math.round(med(p.ds)*1000)}ms`:'인식 안 됨'} <span class="res-sub">(8번 중 ${Math.min(8,p.ds.length)}번)</span></li>`).join('')}</ul>`+
     `<div class="res-actions"><button class="btn" data-act="calib">다시 측정</button><button class="btn primary" data-act="close">완료</button></div>`;
   el.hidden=false;
@@ -767,18 +777,24 @@ function openSettings(){
     `<div class="field"><span>패드 소리<small>칠 때 나는 소리. 끄면 박자 클릭만 들려요</small></span><div class="seg" id="segPad">${[['off','끔'],['tick','틱'],['snare','스네어']].map(([v,l])=>`<button data-v="${v}" aria-pressed="${S.padSound===v}">${l}</button>`).join('')}</div></div>`+
     sw('optVibe',S.vibe,'진동','칠 때 짧게 진동 (안드로이드)')+
     sw('optMetro',S.metro,'메트로놈 클릭','시작 전 카운트 4번은 항상 들려요')+
-    sw('optGuide',S.guide,'패턴 소리 같이 듣기','쳐야 할 음을 앱이 작게 같이 쳐줘요')+
+    sw('optGuide',S.guide,'가이드 소리','쳐야 할 음을 앱이 작게 같이 쳐줘요')+
     sw('optHint',S.hint,'다음 손 힌트','다음에 칠 패드에 점이 켜져요')+
     sw('optSpeed',S.speedup,'스피드 빌더','정확도 90% 이상이면 다음 연습은 +5 BPM')+
-    `<div class="field col"><span>터치 지연 보정 <output id="latOut" style="float:right;font-family:var(--f-latin)">${Math.round(S.lat*1000)}ms</output><small>박자에 맞게 쳤는데도 계속 '늦음'으로 나오면 보정하세요</small></span>`+
+    `<div class="field col"><span>터치 지연 보정 <output id="latOut" style="float:right;font-family:var(--f-latin)">${Math.round(S.lat*1000)}ms</output><small>치는 자세마다 따로 저장돼요 · <span id="latState">${isCalibrated()?'이 자세는 보정됨':'이 자세는 아직 보정 안 함'}</span></small></span>`+
+    `<div class="seg" id="segPosture" style="align-self:flex-start">${Object.entries(POSTURES).map(([v,l])=>`<button data-v="${v}" aria-pressed="${S.posture===v}">${l}</button>`).join('')}</div>`+
     `<input type="range" id="latRange" min="-50" max="300" step="5" value="${Math.round(S.lat*1000)}" aria-label="지연 보정 값"><button class="btn" id="btnCalib">4가지 리듬으로 자동 보정 (약 30초)</button></div>`;
   openSheet('settings',html,b=>{
     b.querySelectorAll('#segReps button').forEach(x=>x.addEventListener('click',()=>{S.reps=+x.dataset.v;store.set('reps',S.reps);b.querySelectorAll('#segReps button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)))}));
     b.querySelectorAll('#segPad button').forEach(x=>x.addEventListener('click',()=>{S.padSound=x.dataset.v;store.set('padSound',S.padSound);b.querySelectorAll('#segPad button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));if(S.padSound!=='off'){ensureAudio();playTap('R')}}));
     [['optVibe','vibe'],['optMetro','metro'],['optGuide','guide'],['optHint','hint'],['optSpeed','speedup']].forEach(([id,k])=>{
-      const el=b.querySelector('#'+id);el.addEventListener('change',()=>{S[k]=el.checked;store.set(k,S[k]);if(k==='hint'&&!S.hint)setNext(null)});
+      const el=b.querySelector('#'+id);el.addEventListener('change',()=>{S[k]=el.checked;store.set(k==='guide'?'guideOn':k,S[k]);if(k==='hint'&&!S.hint)setNext(null)});
     });
-    b.querySelector('#latRange').addEventListener('input',e=>{S.lat=+e.target.value/1000;store.set('lat',S.lat);b.querySelector('#latOut').textContent=Math.round(S.lat*1000)+'ms'});
+    b.querySelector('#latRange').addEventListener('input',e=>{setLat(+e.target.value/1000,false);b.querySelector('#latOut').textContent=Math.round(S.lat*1000)+'ms'});
+    b.querySelectorAll('#segPosture button').forEach(x=>x.addEventListener('click',()=>{
+      setPosture(x.dataset.v);b.querySelectorAll('#segPosture button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));
+      b.querySelector('#latRange').value=Math.round(S.lat*1000);b.querySelector('#latOut').textContent=Math.round(S.lat*1000)+'ms';
+      b.querySelector('#latState').textContent=isCalibrated()?'이 자세는 보정됨':'이 자세는 아직 보정 안 함';
+    }));
     b.querySelector('#btnCalib').addEventListener('click',startCalib);
   });
 }
@@ -890,7 +906,27 @@ $('#songBar').addEventListener('click',openSongSheet);
 $('#btnSettings').addEventListener('click',openSettings);
 holdRepeat($('#bpmDown'),-1);
 holdRepeat($('#bpmUp'),1);
-$('#btnPlay').addEventListener('click',()=>{if(calib)return;bump.told=false;if(run)finish(true);else startRun()});
+$('#btnPlay').addEventListener('click',()=>{
+  if(calib)return;bump.told=false;
+  if(run){finish(true);return}
+  if(!isCalibrated()&&!store.get('skipCal.'+S.posture,false)){showCalNotice();return}
+  startRun();
+});
+// 이 자세로 보정한 적이 없으면 시작 전에 한 번 안내해요
+function showCalNotice(){
+  const el=$('#result');
+  const render=()=>{
+    el.innerHTML=`<div class="res-head">시작 전에 지연 보정을 추천해요</div>`+
+      `<p class="note" style="font-size:13px;color:var(--ink)">폰마다, 그리고 <b>치는 자세</b>마다 터치가 인식되는 시간이 달라요. 엄지로 치는지, 폰을 눕혀 놓고 검지로 치는지에 따라 차이가 커요. 30초면 끝나고, 자세별로 저장돼요.</p>`+
+      `<div class="seg" style="align-self:flex-start">${Object.entries(POSTURES).map(([v,l])=>`<button data-posture="${v}" aria-pressed="${S.posture===v}">${l}</button>`).join('')}</div>`+
+      `<div class="res-actions"><button class="btn" data-act="skipcal">그냥 시작</button><button class="btn primary" data-act="calib">보정하기</button></div>`;
+    el.querySelectorAll('[data-posture]').forEach(x=>x.addEventListener('click',()=>{
+      setPosture(x.dataset.posture);
+      if(isCalibrated()){el.hidden=true;toast(`${POSTURES[S.posture]} 보정값 ${Math.round(S.lat*1000)}ms를 불러왔어요`)}else render();
+    }));
+  };
+  render();el.hidden=false;
+}
 $('#fileSong').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
   finish(false);ensureAudio();
