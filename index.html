@@ -92,7 +92,7 @@ button{cursor:pointer}
 
 /* 템포·재생 */
 .transport{display:flex;align-items:center;gap:6px;height:76px;border-top:1px solid var(--rule)}
-.step{width:44px;height:44px;border-radius:50%;border:1px solid var(--rule);background:transparent;display:grid;place-items:center;color:var(--ink);flex:none}
+.step{width:44px;height:44px;border-radius:50%;border:1px solid var(--rule);background:transparent;display:grid;place-items:center;color:var(--ink);flex:none;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .step:active{background:var(--pad)}
 .tempo{display:flex;align-items:baseline;gap:6px;min-width:0;padding:0 6px}
 .tempo output{font:300 46px/1 var(--f-num);font-variant-numeric:tabular-nums;letter-spacing:-.01em;min-width:2.1ch;text-align:right}
@@ -104,12 +104,12 @@ button{cursor:pointer}
 /* 패드 */
 .pads{flex:0 0 clamp(170px,33%,300px);display:flex;gap:8px;position:relative}
 .pad{flex:1;min-width:0;border:0;border-radius:20px;background:var(--pad);position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
-  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:background .06s,box-shadow .12s}
+  touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;transition:background .12s,box-shadow .12s}
 .pad b{font:300 64px/1 var(--f-num);color:var(--ink)}
 .pad small{font-size:12px;color:var(--muted)}
 .pad .hint{position:absolute;top:14px;left:50%;width:8px;height:8px;margin-left:-4px;border-radius:50%;background:transparent;transition:background .08s}
 .pad.next .hint{background:var(--signal)}
-.pad.hit{background:var(--pad-press)}
+.pad.hit{background:var(--pad-press);transition:none}
 .pad.okf{box-shadow:inset 0 0 0 3px var(--ok)}
 .pad.badf{box-shadow:inset 0 0 0 3px var(--bad)}
 
@@ -124,7 +124,7 @@ button{cursor:pointer}
 .res-list li{padding-left:14px;position:relative}
 .res-list li::before{content:"";position:absolute;left:0;top:.6em;width:5px;height:5px;border-radius:50%;background:var(--muted)}
 .res-list b{color:var(--bad);font-weight:600}
-.res-actions{margin-top:auto;display:flex;gap:8px}
+.res-actions{margin-top:auto;display:flex;flex-wrap:wrap;gap:8px}
 
 .btn{height:44px;border-radius:12px;border:1px solid var(--rule);background:transparent;padding:0 14px;font-weight:500;flex:1;display:grid;place-items:center}
 .btn.primary{background:var(--ink);border-color:var(--ink);color:var(--bg);font-weight:600}
@@ -397,24 +397,44 @@ function ensureAudio(){
     songGain=ctx.createGain();songGain.gain.value=0.85;songGain.connect(master);
     noiseBuf=ctx.createBuffer(1,Math.floor(ctx.sampleRate*.3),ctx.sampleRate);
     const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+    pans.L=makePan(-.35);pans.R=makePan(.35);
+    prerenderTaps();
   }
   if(ctx.state!=='running')ctx.resume();
 }
-function outFor(pan){if(ctx.createStereoPanner){const p=ctx.createStereoPanner();p.pan.value=pan;p.connect(master);return p}return master}
-function playHit(t,hand,vol,soft){
-  const out=outFor(hand==='L'?-.35:.35);
-  const g=ctx.createGain();g.connect(out);
+const pans={},tapBuf={};
+function makePan(v){if(ctx.createStereoPanner){const p=ctx.createStereoPanner();p.pan.value=v;p.connect(master);return p}return master}
+// 소리 그래프를 ac(실시간 또는 오프라인) 위에 만들기
+function synthHit(ac,noise,out,t,hand,vol,soft){
+  const g=ac.createGain();g.connect(out);
   g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+(soft?.08:.14));
-  const ns=ctx.createBufferSource();ns.buffer=noiseBuf;
-  const bp=ctx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=soft?3200:(hand==='L'?2100:2400);bp.Q.value=.9;
+  const ns=ac.createBufferSource();ns.buffer=noise;
+  const bp=ac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=soft?3200:(hand==='L'?2100:2400);bp.Q.value=.9;
   ns.connect(bp);bp.connect(g);ns.start(t);ns.stop(t+.16);
   if(!soft){
-    const o=ctx.createOscillator(),og=ctx.createGain();o.type='triangle';
+    const o=ac.createOscillator(),og=ac.createGain();o.type='triangle';
     o.frequency.setValueAtTime(hand==='L'?240:262,t);o.frequency.exponentialRampToValueAtTime(140,t+.06);
     og.gain.setValueAtTime(vol*.8,t);og.gain.exponentialRampToValueAtTime(.001,t+.08);
     o.connect(og);og.connect(out);o.start(t);o.stop(t+.09);
   }
 }
+// 패드 소리는 미리 녹음해 두고 누를 때 버퍼 하나만 재생해요 (누르는 순간 처리량을 최소로)
+async function prerenderTaps(){
+  for(const h of ['L','R']){
+    try{
+      const sr=ctx.sampleRate,oc=new OfflineAudioContext(1,Math.ceil(sr*.17),sr);
+      const nb=oc.createBuffer(1,noiseBuf.length,sr);nb.getChannelData(0).set(noiseBuf.getChannelData(0));
+      synthHit(oc,nb,oc.destination,0,h,.6,false);
+      tapBuf[h]=await oc.startRendering();
+    }catch(e){}
+  }
+}
+function playTap(hand){
+  const b=tapBuf[hand];
+  if(!b){playHit(ctx.currentTime,hand,.6,false);return}
+  const s=ctx.createBufferSource();s.buffer=b;s.connect(pans[hand]);s.start(0);
+}
+function playHit(t,hand,vol,soft){synthHit(ctx,noiseBuf,pans[hand],t,hand,vol,soft)}
 function playClick(t,acc){
   const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=acc?1760:1180;
   g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(acc?.42:.3,t+.002);g.gain.exponentialRampToValueAtTime(.0001,t+.05);
@@ -535,7 +555,8 @@ function startRun(){
   for(let k=firstBeat;k<total;k++)clicks.push({t:t0+k*spb,acc:((k%4)+4)%4===0,count:k<0&&k>=-4});
   const iv=spb/P.sub;
   run={t0,spb,L,reps,N,bars:P.bars,events,clicks,ci:0,gi:0,scan:0,shown:-1,lastC:'',extra:0,src,
-    win:Math.min(.16,iv*.5),good:Math.min(.09,iv*.4),tEnd:t0+reps*L};
+    win:Math.min(.16,iv*.75),good:Math.min(.09,Math.max(.05,iv*.45)),tEnd:t0+reps*L};
+  run.good=Math.min(run.good,run.win);
   clearPaint();
   run.timer=setInterval(schedule,25);schedule();
   run.raf=requestAnimationFrame(frame);
@@ -564,15 +585,19 @@ function frame(){
 function hit(hand,ts){
   ensureAudio();
   const d=ts!=null?(performance.now()-ts)/1000:0,at=ctx.currentTime-(d>=0&&d<.1?d:0);
-  playHit(ctx.currentTime,hand,.6,false);padFx(hand,'hit');
+  playTap(hand);padFx(hand,'hit');
   try{navigator.vibrate&&navigator.vibrate(8)}catch(e){}
   if(calib){calib.taps.push(at);return}
   const R=run;if(!R)return;
-  const tap=at-S.lat;let best=null,bd=1e9;
+  // 판정 창 안의 음표 중 같은 손 음표를 먼저 찾아요. 빠른 템포에서 살짝 어긋나도 옆 음표(반대 손)로 오판하지 않게.
+  const tap=at-S.lat;let best=null,bd=1e9,same=null,sd=1e9;
   for(let k=Math.max(0,R.scan-4);k<R.events.length;k++){
     const e=R.events[k];if(e.t-R.win>tap)break;if(e.st)continue;
-    const dd=Math.abs(tap-e.t);if(dd<=R.win&&dd<bd){bd=dd;best=e}
+    const dd=Math.abs(tap-e.t);if(dd>R.win)continue;
+    if(dd<bd){bd=dd;best=e}
+    if(e.h===hand&&dd<sd){sd=dd;same=e}
   }
+  if(same)best=same;
   if(!best){R.extra++;padFx(hand,'badf');return}
   best.err=tap-best.t;best.tapH=hand;
   if(best.h!==hand){best.st='bad';best.why='hand'}
@@ -613,13 +638,18 @@ function showResult(R,ev){
   const lc={};ev.forEach(e=>{if(e.st==='bad'){const n=notes[e.i],k=n.bar*4+n.beat;lc[k]=(lc[k]||0)+1}});
   const top=Object.entries(lc).sort((a,b)=>b[1]-a[1])[0];
   if(top&&top[1]>=2){const k=+top[0];lines.push(`${Math.floor(k/4)+1}마디 ${k%4+1}박이 가장 어려웠어요`)}
+  // 양손이 똑같이 한쪽으로 밀리면 폰 지연 때문일 가능성이 커요 → 이 결과로 바로 보정
+  const errs=ev.filter(e=>e.err!=null&&e.tapH===e.h).map(e=>e.err).sort((a,b)=>a-b);
+  latFix=0;
+  if(errs.length>=8){const med=errs[Math.floor(errs.length/2)];if(Math.abs(med)>=.02){latFix=med;
+    lines.push(`전체 타이밍이 ${Math.round(Math.abs(med)*1000)}ms ${med>0?'늦게':'빠르게'} 잡혀요. 폰 지연 때문일 수 있어요`)}}
   if(S.speedup&&S.mode!=='song'&&pct>=90){S.bpm=clamp(S.bpm+5,30,220);store.set('bpm',S.bpm);updateTempo();lines.push(`다음 연습은 ${S.bpm} BPM으로 올렸어요`)}
   const head=pct>=95?'완벽해요':pct>=80?'좋아요':pct>=60?'조금만 더':'템포를 낮춰 보세요';
   const el=$('#result');
   el.innerHTML=`<div class="res-top"><div class="res-score">${pct}<small>%</small></div><div><div class="res-head">${head}</div><div class="res-sub">${ev.length}음 중 ${ok}음 정확</div></div></div>`+
     `<ul class="res-list">${lines.map(l=>`<li>${l}</li>`).join('')}</ul>`+
     `<div class="res-sub">손 순서 ${cnt('hand')} · 빠름 ${cnt('early')} · 늦음 ${cnt('late')} · 놓침 ${cnt('miss')} · 헛침 ${R.extra}</div>`+
-    `<div class="res-actions"><button class="btn" data-act="close">닫기</button>${cur.pattern.gen?'<button class="btn" data-act="new">새 패턴</button>':''}<button class="btn primary" data-act="again">다시 하기</button></div>`;
+    `<div class="res-actions">${latFix?`<button class="btn" data-act="fixlat">지연 보정 ${latFix>0?'+':'−'}${Math.round(Math.abs(latFix)*1000)}ms</button>`:''}<button class="btn" data-act="close">닫기</button>${cur.pattern.gen?'<button class="btn" data-act="new">새 패턴</button>':''}<button class="btn primary" data-act="again">다시 하기</button></div>`;
   el.hidden=false;
   // 악보를 처음부터 다시 훑으며 음표마다 결과 색을 칠해요
   const agg=notes.map(()=>({t:0,o:0}));ev.forEach(e=>{agg[e.i].t++;if(e.st==='ok')agg[e.i].o++});
@@ -628,10 +658,12 @@ function showResult(R,ev){
     setTimeout(()=>{const nel=noteEls[k];if(nel&&!run)nel.classList.add(a.o/a.t>=.8?'ok':'bad');
       const b=n.bar;if(!run&&geo[b])moveCursor(b,geo[b].xOf(n.pos));if(k===N-1)setTimeout(()=>{if(!run)hideCursors()},300)},150+k*step)});
 }
+let latFix=0;
 function hideResult(){$('#result').hidden=true}
 $('#result').addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
-  if(a.dataset.act==='close'){hideResult();clearPaint()}
+  if(a.dataset.act==='fixlat'){S.lat=clamp(S.lat+latFix,-.05,.3);store.set('lat',S.lat);latFix=0;a.remove();toast(`지연 보정을 ${Math.round(S.lat*1000)}ms로 바꿨어요`)}
+  else if(a.dataset.act==='close'){hideResult();clearPaint()}
   else if(a.dataset.act==='new'){setPattern(patternForMode())}
   else{clearPaint();startRun()}
 });
@@ -731,7 +763,7 @@ const padL=$('#padL'),padR=$('#padR');
 function padFx(hand,cls){
   const p=hand==='L'?padL:padR;
   if(cls!=='hit')p.classList.remove(cls==='okf'?'badf':'okf');
-  p.classList.remove(cls);void p.offsetWidth;p.classList.add(cls);
+  p.classList.add(cls);
   clearTimeout(p['_t'+cls]);p['_t'+cls]=setTimeout(()=>p.classList.remove(cls),cls==='hit'?90:220);
 }
 function setNext(h){padL.classList.toggle('next',h==='L');padR.classList.toggle('next',h==='R')}
@@ -744,13 +776,32 @@ function updateTempo(){
   }else{$('#bpmOut').textContent=S.bpm;$('#bpmUnit').textContent='BPM'}
 }
 const bump=d=>{
-  if(S.mode==='song'){finish(false);song.rate=clamp(Math.round((song.rate+d/50)*10)/10,.5,1)}
-  else{S.bpm=clamp(S.bpm+d,30,220);store.set('bpm',S.bpm);if(run)toast('바뀐 템포는 다음 시작부터 적용돼요')}
+  if(S.mode==='song'){
+    if(!song.buf)return;finish(false);
+    // 노래는 재생 속도로 템포를 바꿔요 (원곡의 50~100%)
+    const target=Math.round(song.bpm*song.rate)+d;song.rate=clamp(target/song.bpm,.5,1);
+  }else{
+    S.bpm=clamp(S.bpm+d,30,220);store.set('bpm',S.bpm);
+    if(run&&!bump.told){bump.told=true;toast('바뀐 템포는 다음 시작부터 적용돼요')}
+  }
   updateTempo();
 };
+// 누르면 1씩, 꾹 누르고 있으면 계속 바뀌어요
+function holdRepeat(btn,d){
+  let t1=0,t2=0,n=0;
+  const stop=()=>{clearTimeout(t1);clearInterval(t2)};
+  btn.addEventListener('pointerdown',e=>{
+    e.preventDefault();stop();n=0;bump(d);
+    t1=setTimeout(()=>{t2=setInterval(()=>{n++;bump(n>15?d*5:d)},70)},380);
+  });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev=>btn.addEventListener(ev,stop));
+  btn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();bump(d)}});
+}
 
+// 터치는 touchstart로 바로 받아요 (손가락이 닿는 순간, 여러 손가락 동시에). 마우스는 mousedown.
 [['L',padL],['R',padR]].forEach(([h,p])=>{
-  p.addEventListener('pointerdown',e=>{e.preventDefault();hit(h,e.timeStamp)});
+  p.addEventListener('touchstart',e=>{e.preventDefault();for(let i=0;i<e.changedTouches.length;i++)hit(h,e.timeStamp)},{passive:false});
+  p.addEventListener('mousedown',e=>{e.preventDefault();hit(h,e.timeStamp)});
   p.addEventListener('contextmenu',e=>e.preventDefault());
 });
 document.addEventListener('keydown',e=>{
@@ -759,6 +810,8 @@ document.addEventListener('keydown',e=>{
   if(k==='f'||k==='d'||k==='arrowleft'){e.preventDefault();hit('L',e.timeStamp)}
   else if(k==='j'||k==='k'||k==='arrowright'){e.preventDefault();hit('R',e.timeStamp)}
   else if(k===' '){e.preventDefault();$('#btnPlay').click()}
+  else if(k==='arrowup'){e.preventDefault();bump(1)}
+  else if(k==='arrowdown'){e.preventDefault();bump(-1)}
 });
 
 function patternForMode(){
@@ -780,9 +833,9 @@ $('#pickPattern').addEventListener('click',openPicker);
 $('#btnNew').addEventListener('click',()=>{finish(false);setPattern(patternForMode())});
 $('#songBar').addEventListener('click',openSongSheet);
 $('#btnSettings').addEventListener('click',openSettings);
-$('#bpmDown').addEventListener('click',()=>bump(-5));
-$('#bpmUp').addEventListener('click',()=>bump(5));
-$('#btnPlay').addEventListener('click',()=>{if(calib)return;if(run)finish(true);else startRun()});
+holdRepeat($('#bpmDown'),-1);
+holdRepeat($('#bpmUp'),1);
+$('#btnPlay').addEventListener('click',()=>{if(calib)return;bump.told=false;if(run)finish(true);else startRun()});
 $('#fileSong').addEventListener('change',async e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
   finish(false);ensureAudio();
