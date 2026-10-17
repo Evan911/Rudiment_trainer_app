@@ -97,6 +97,7 @@ button{cursor:pointer}
 .ghost{font:400 13px var(--f-latin);fill:var(--ink)}
 .barno{font:500 10px var(--f-latin);fill:var(--muted)}
 .sect{font:600 12px var(--f-body);fill:var(--ink)}
+.tempo-mk{font:600 11px var(--f-latin);fill:var(--signal)}
 .startmark{fill:var(--signal);opacity:.08}
 .opt-row{display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--rule)}
 .opt-row .opt{flex:1;border-bottom:0}
@@ -348,31 +349,40 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',
 // 곡 파일(JSON)을 마디 목록으로. 칸 문자: '-' 또는 '.' 쉼표, 소문자 침, 대문자 악센트, g 고스트, 하이햇의 o 오픈
 function parseSong(j){
   if(!j||!Array.isArray(j.bars)||!j.bars.length)throw new Error('bars(마디 목록)가 없어요');
-  const bars=[];let prev=null;
+  const bars=[];let bpm=clamp(+j.bpm||80,30,300);
   j.bars.forEach((b,n)=>{
-    if(b.repeat){if(!prev)throw new Error(`${n+1}번째 항목: 반복할 앞 마디가 없어요`);for(let k=0;k<b.repeat;k++)bars.push({...prev,label:null});return}
+    // {repeat:n} 바로 앞 마디를 n번, {repeat:n, bars:m} 앞의 m마디 묶음을 n번
+    if(b.repeat){
+      const span=b.bars||1;if(bars.length<span)throw new Error(`${n+1}번째 항목: 반복할 앞 마디가 없어요`);
+      const grp=bars.slice(-span);for(let k=0;k<b.repeat;k++)grp.forEach(x=>bars.push({...x,label:null}));return;
+    }
+    if(b.bpm)bpm=clamp(+b.bpm,30,300);
     const grid=b.grid||j.grid||16;
-    if(![4,8,12,16].includes(grid))throw new Error(`${bars.length+1}마디: grid는 4, 8, 12, 16 중 하나여야 해요`);
+    if(![4,8,12,16,24,48].includes(grid))throw new Error(`${bars.length+1}마디: grid는 4, 8, 12, 16, 24, 48 중 하나여야 해요`);
     const clean=s=>String(s).replace(/[\s|]/g,'');
-    const bar={grid,label:b.label||null,hits:[]};
+    const bar={grid,bpm,label:b.label||null,hits:[]};
     for(let k=0;k<grid;k++){
       const h={};
       for(const inst of Object.keys(KIT)){if(b[inst]==null)continue;const c=clean(b[inst])[k];if(c&&c!=='-'&&c!=='.')h[inst]=c}
       if(b.stick){const c=clean(b.stick)[k];if(c&&'RLB'.includes(c))h.stick=c}
       bar.hits.push(h);
     }
-    bars.push(bar);prev=bar;
+    bars.push(bar);
   });
-  return {title:j.title||'제목 없는 악보',bpm:clamp(+j.bpm||80,30,240),bars};
+  return {title:j.title||'제목 없는 악보',bpm:bars[0].bpm,bars,tempoChanges:bars.some(b=>b.bpm!==bars[0].bpm)};
 }
 // 손 정하기: 심벌=R, 혼자 나온 스네어·탐=L, 심벌과 북이 같이 나오면 두 손,
 // 북만 연달아 나오면(필인) 박자 위치로 R/L(16·8분: 정박 R 엇박 L, 셋잇단: 번갈아). stick 줄이 있으면 그게 우선.
 function assignHands(bar){
-  const g=bar.grid,hits=bar.hits;
-  const cym=k=>k>=0&&k<g&&KIT_CYMS.some(i=>hits[k][i]);
-  const drm=k=>k>=0&&k<g?KIT_DRUMS.filter(i=>hits[k][i]).length:0;
+  const g=bar.grid,hits=bar.hits,fine=g<=16&&g%3!==0; // 4·8·16 격자는 박자 위치(정박 R, 엇박 L), 그 외는 번갈아
+  const near=fine?1:g/8; // 이 간격(8분음표) 안에 붙어 있으면 '연달아'
+  const isHand=k=>Object.keys(hits[k]).some(i=>KIT[i]&&!KIT[i].foot);
+  const cym=k=>KIT_CYMS.some(i=>hits[k][i]);
+  const drm=k=>KIT_DRUMS.filter(i=>hits[k][i]).length;
   const solo=k=>!cym(k)&&drm(k)===1;
-  const out=[];let prevRunHand=null;
+  const prevHit=k=>{for(let j=k-1;j>=0&&k-j<=near;j--)if(isHand(j))return j;return -1};
+  const nextHit=k=>{for(let j=k+1;j<g&&j-k<=near;j++)if(isHand(j))return j;return -1};
+  const out=[];
   for(let k=0;k<g;k++){
     const h=hits[k],c=cym(k),d=drm(k);let hands=[];
     if(h.stick)hands=h.stick==='B'?['R','L']:[h.stick];
@@ -380,12 +390,11 @@ function assignHands(bar){
     else if(c)hands=['R'];
     else if(d>=2)hands=['R','L'];
     else if(d===1){
-      const run=solo(k-1)||solo(k+1);
-      if(!run)hands=['L'];
-      else if(g%3===0)hands=[solo(k-1)&&prevRunHand?(prevRunHand==='R'?'L':'R'):'R'];
-      else hands=[k%2===0?'R':'L'];
+      const p=prevHit(k),n=nextHit(k),pr=p>=0&&solo(p),nr=n>=0&&solo(n);
+      if(!pr&&!nr)hands=['L'];
+      else if(fine)hands=[k%2===0?'R':'L'];
+      else hands=[pr&&out[p].length===1?(out[p][0]==='R'?'L':'R'):'R'];
     }
-    prevRunHand=d===1&&!c&&hands.length===1?hands[0]:null;
     out.push(hands);
   }
   return out;
@@ -408,14 +417,14 @@ S.kitBpm=store.get('kitBpm',(kitJson&&kitJson.bpm)||90);S.kitStart=0;
 const cur={pattern:null,notes:[],slotNote:[]};
 function kitMeta(){
   const P=cur.pattern;
-  $('#patMeta').innerHTML=`<b>드럼 악보</b> &nbsp;·&nbsp; 원곡 ${P.song.bpm} BPM &nbsp;·&nbsp; ${P.bars}마디`+
+  $('#patMeta').innerHTML=`<b>드럼 악보</b> &nbsp;·&nbsp; 원곡 ${P.song.bpm} BPM${P.song.tempoChanges?' (템포 변화 있음)':''} &nbsp;·&nbsp; ${P.bars}마디`+
     (S.kitStart?` &nbsp;·&nbsp; <b>${S.kitStart+1}마디부터</b>`:' &nbsp;·&nbsp; 마디를 누르면 거기서 시작');
 }
 function setPattern(P){
   hideResult();
   if(P.kind==='kit'){
     cur.pattern=P;cur.notes=P.notes;cur.slotNote=[];
-    $('#patName').textContent=P.name;kitMeta();renderStaff();return;
+    $('#patName').textContent=P.name;kitMeta();renderStaff();updateTempo();return;
   }
   cur.pattern=P;cur.notes=[];cur.slotNote=new Array(P.slots.length).fill(-1);
   P.slots.forEach((s,j)=>{if(s){cur.slotNote[j]=cur.notes.length;
@@ -499,10 +508,11 @@ function flagDown(sx,bot,c){
 function drawVoice(sub,hits,xs,o){
   let h='';
   if(!hits.length){if(o.rests)h+=restGlyph('q',xs(0)+6,o.restY);return h}
-  if(o.rests)(REST_TABLE[sub][hits[0]]||[]).forEach(([t,k])=>{h+=restGlyph(t,xs(k),o.restY)});
+  if(o.rests)((REST_TABLE[sub]||{})[hits[0]]||[]).forEach(([t,k])=>{h+=restGlyph(t,xs(k),o.restY)});
   const items=hits.map((k,idx)=>{
-    const dur=(idx<hits.length-1?hits[idx+1]:sub)-k;let beams=0,dot=false;
-    if(sub===2||sub===3)beams=dur===1?1:0;else if(sub===4){beams=dur===1?2:dur===4?0:1;dot=dur===3}
+    // 다음 음까지의 길이(박 단위)로 빔 개수: ¼박 이하 2개, ½박 이하 1개, ¾박은 점8분
+    const d=((idx<hits.length-1?hits[idx+1]:sub)-k)/sub,e=1e-6;
+    const dot=Math.abs(d-.75)<e,beams=dot?1:d<=.25+e?2:d<=.5+e?1:0;
     const x=xs(k);return {k,x,sx:o.up?x+5:x-5,beams,dot};
   });
   items.forEach(it=>{
@@ -526,8 +536,13 @@ function drawVoice(sub,hits,xs,o){
     grp=[];
   };
   items.forEach(it=>{if(it.beams>0)grp.push(it);else flush()});flush();
-  if(sub===3&&o.up)h+=`<text class="tup" x="${r1(xs(1)+5)}" y="${o.stemEnd-4}">3</text>`;
+  if((sub===3||sub===6||sub===12)&&o.up)h+=`<text class="tup" x="${r1((xs(0)+xs(sub-1))/2+5)}" y="${o.stemEnd-4}">${sub===6?6:3}</text>`;
   return h;
+}
+// 한 박 안의 칸들을 가장 단순한 박자 단위로 줄여요 (예: 48격자의 0·6 → 8분 두 개)
+function reduceBeat(hits,sub){
+  for(const s of [1,2,3,4,6,12]){if(sub%s)continue;if(hits.every(k=>(k*s)%sub===0))return {s,h:hits.map(k=>k*s/sub)}}
+  return {s:sub,h:hits};
 }
 function kitHead(inst,c,x,y,T,s){
   const k=KIT[inst];let g='';
@@ -541,7 +556,7 @@ function kitHead(inst,c,x,y,T,s){
   }
   return g;
 }
-const KIT_X0=46,KIT_BARW=340,KIT_T=50,KIT_S=8;
+const KIT_X0=46,KIT_BARW=340,KIT_T=74,KIT_S=8;
 function renderKit(P){
   const svg=$('#staff'),song=P.song,s=KIT_S,T=KIT_T,barW=KIT_BARW,x0=KIT_X0;
   const W=x0+P.bars*barW+16,H=T+4*s+62,upTop=T-26;
@@ -558,8 +573,9 @@ function renderKit(P){
     h+=b===P.bars-1
       ?`<line class="bl" x1="${bx+barW-5}" x2="${bx+barW-5}" y1="${T}" y2="${T+4*s}"/><rect class="beam" x="${bx+barW-3}" y="${T}" width="3" height="${4*s}"/>`
       :`<line class="bl" x1="${bx+barW}" x2="${bx+barW}" y1="${T}" y2="${T+4*s}"/>`;
-    h+=`<text class="barno" x="${bx+3}" y="${T-34}">${b+1}</text>`;
-    if(bar.label)h+=`<text class="sect" x="${bx+18}" y="${T-34}">${esc(bar.label)}</text>`;
+    h+=`<text class="barno" x="${bx+3}" y="${T-46}">${b+1}</text>`;
+    if(bar.label)h+=`<text class="sect" x="${bx+18}" y="${T-46}">${esc(bar.label)}</text>`;
+    if(b===0||bar.bpm!==song.bars[b-1].bpm)h+=`<text class="tempo-mk" x="${bx+3}" y="${T-61}">♩ = ${bar.bpm}</text>`;
     for(let beat=0;beat<4;beat++){
       const base=beat*sub,xs=k=>xOf(b*4+(base+k)/sub),handHits=[],kickHits=[];
       for(let k=0;k<sub;k++){
@@ -573,9 +589,10 @@ function renderKit(P){
         hands.forEach((hd,n)=>{g+=`<text class="stk" x="${r1(x)}" y="${T+4*s+38+n*13}">${hd}</text>`});
         h+=`<g class="note" data-k="${b}-${slot}">${g}</g>`;
       }
-      h+=drawVoice(sub,handHits,xs,{up:true,stemEnd:upTop,rests:true,restY:T+2*s,
-        headY:k=>Math.max(...Object.keys(bar.hits[base+k]).filter(i=>KIT[i]&&!KIT[i].foot).map(yOf))});
-      if(kickHits.length)h+=drawVoice(sub,kickHits,xs,{up:false,stemEnd:T+4*s+18,rests:false,headY:()=>yOf('bd')});
+      const hr=reduceBeat(handHits,sub),hm=j=>j*sub/hr.s;
+      h+=drawVoice(hr.s,hr.h,j=>xs(hm(j)),{up:true,stemEnd:upTop,rests:true,restY:T+2*s,
+        headY:j=>Math.max(...Object.keys(bar.hits[base+hm(j)]).filter(i=>KIT[i]&&!KIT[i].foot).map(yOf))});
+      if(kickHits.length){const kr=reduceBeat(kickHits,sub);h+=drawVoice(kr.s,kr.h,j=>xs(j*sub/kr.s),{up:false,stemEnd:T+4*s+18,rests:false,headY:()=>yOf('bd')})}
     }
   });
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('width',W);svg.setAttribute('height',H);
@@ -787,9 +804,14 @@ function setPlayBtn(on){const b=$('#btnPlay');b.innerHTML=on?ICON.stop:ICON.play
 function startRun(){
   ensureAudio();hideResult();
   const P=cur.pattern,notes=cur.notes,N=notes.length;if(!N)return;
-  const startCtx=ctx.currentTime+.15;let spb,t0,reps,src=null,firstBeat,off=0;
+  const startCtx=ctx.currentTime+.15;let spb,t0,reps,src=null,firstBeat,off=0,tAt=null,posAt=null;
   if(P.kind==='kit'){
-    spb=60/S.kitBpm;t0=startCtx+4*spb;reps=1;firstBeat=-4;off=S.kitStart*4;
+    // 마디마다 템포가 다를 수 있어요: 마디 시작 시각표를 만들어 박 위치 ↔ 시각을 바꿔요
+    const fac=S.kitBpm/P.song.bpm,bars=P.song.bars,sb=S.kitStart,bspb=bars.map(b=>60/(b.bpm*fac));
+    off=sb*4;reps=1;firstBeat=-4;spb=bspb[sb];t0=startCtx+4*spb;
+    const bt=[];let tt=t0;for(let b=sb;b<bars.length;b++){bt[b]=tt;tt+=4*bspb[b]}
+    tAt=pos=>{const b=clamp(Math.floor(pos/4+1e-9),sb,bars.length-1);return bt[b]+(pos-b*4)*bspb[b]};
+    posAt=x=>{let lo=sb,hi=bars.length-1;while(lo<hi){const m=(lo+hi+1)>>1;if(bt[m]<=x)lo=m;else hi=m-1}return lo*4+(x-bt[lo])/bspb[lo]};
   }else if(S.mode==='song'){
     if(!song.buf){openSongSheet();return}
     const r=song.rate,bar=240/song.bpm;
@@ -805,15 +827,25 @@ function startRun(){
     spb=60/S.bpm;t0=startCtx+4*spb;reps=S.reps===0?200:S.reps;firstBeat=-4;
   }
   // off: 시작 마디(박 단위). 그 앞의 음표는 빼고, 남은 부분을 한 바퀴로 봐요
-  const beats=P.bars*4-off,L=beats*spb,events=[],use=notes.filter(n=>n.pos>=off),kOf={};
+  if(!tAt)tAt=pos=>t0+(pos-off)*spb;
+  const beats=P.bars*4-off,L=tAt(P.bars*4)-t0,events=[],use=notes.filter(n=>n.pos>=off),kOf={};
   use.forEach((n,k)=>{kOf[n.i]=k});
-  for(let rep=0;rep<reps;rep++)for(const n of use)events.push({t:t0+rep*L+(n.pos-off)*spb,h:n.h,g:n.g,i:n.i,rep,st:null,why:null,err:null,tapH:null,gt:null});
+  for(let rep=0;rep<reps;rep++)for(const n of use)events.push({t:t0+rep*L+(tAt(n.pos)-t0),h:n.h,g:n.g,i:n.i,rep,st:null,why:null,err:null,tapH:null,gt:null});
+  // 판정 창은 음표마다 이웃 음표와의 간격에 맞춰요 (빽빽한 곳은 좁게, 여유 있는 곳은 넓게)
+  const times=[...new Set(events.map(e=>e.t))];let ti=0,win=0;
+  events.forEach(e=>{
+    while(times[ti]<e.t-1e-9)ti++;
+    const gap=Math.min(ti>0?e.t-times[ti-1]:Infinity,ti<times.length-1?times[ti+1]-e.t:Infinity);
+    const g=isFinite(gap)?gap:.5;
+    e.w=Math.min(.16,Math.max(.035,g*.75));e.gd=Math.min(e.w,.09,Math.max(.05,g*.45));win=Math.max(win,e.w);
+  });
   const clicks=[],total=reps*beats;
-  for(let k=firstBeat;k<total;k++)clicks.push({t:t0+k*spb,acc:((k%4)+4)%4===0,count:k<0&&k>=-4});
-  const iv=spb/P.sub;
-  run={t0,spb,L,reps,N:use.length,kOf,off,beats,bars:P.bars,events,clicks,ci:0,gi:0,scan:0,shown:-1,lastC:'',extra:0,src,
-    win:Math.min(.16,iv*.75),good:Math.min(.09,Math.max(.05,iv*.45)),tEnd:t0+reps*L};
-  run.good=Math.min(run.good,run.win);
+  for(let k=firstBeat;k<total;k++){
+    const t=k<0?t0+k*spb:t0+Math.floor(k/beats)*L+(tAt(off+k%beats)-t0);
+    clicks.push({t,acc:((k%4)+4)%4===0,count:k<0&&k>=-4});
+  }
+  run={t0,spb,L,reps,N:use.length,kOf,off,beats,posAt,bars:P.bars,events,clicks,ci:0,gi:0,scan:0,shown:-1,lastC:'',extra:0,src,
+    win,tEnd:t0+reps*L};
   clearPaint();
   run.timer=setInterval(schedule,25);schedule();
   run.raf=requestAnimationFrame(frame);
@@ -828,11 +860,11 @@ function schedule(){
 function frame(){
   const R=run;if(!R)return;R.raf=requestAnimationFrame(frame);
   const now=ctx.currentTime-S.lat,ev=R.events,N=R.N;
-  while(R.scan<ev.length&&ev[R.scan].t+R.win<now){const e=ev[R.scan];if(!e.st){e.st='bad';e.why='miss';if(e.rep===R.shown)paint(e)}R.scan++}
+  while(R.scan<ev.length&&ev[R.scan].t+ev[R.scan].w<now){const e=ev[R.scan];if(!e.st){e.st='bad';e.why='miss';if(e.rep===R.shown)paint(e)}R.scan++}
   const rel=(now-R.t0)/R.L,rep=Math.floor(rel);
   if(rep>=0&&rep<R.reps&&rep!==R.shown){R.shown=rep;clearPaint();for(let i=0;i<N;i++)paint(ev[rep*N+i])}
-  if(rel>=0&&rel<R.reps){const pb=R.off+(rel-rep)*R.beats,b=Math.min(R.bars-1,Math.floor(pb/4));moveCursor(b,geo[b].xOf(pb))}else hideCursors();
-  const bk=Math.floor((now-R.t0)/R.spb);
+  if(rel>=0&&rel<R.reps){const pb=R.posAt?R.posAt(now):R.off+(rel-rep)*R.beats,b=Math.min(R.bars-1,Math.floor(pb/4));moveCursor(b,geo[b].xOf(pb))}else hideCursors();
+  const bk=now<R.t0||!R.posAt?Math.floor((now-R.t0)/R.spb):Math.floor(R.posAt(now)-R.off+1e-9);
   lightBeat(bk>=-4&&now<R.tEnd?((bk%4)+4)%4:-1);
   let c='';if(now<R.t0&&bk>=-4)c=String(bk+5);
   if(c!==R.lastC){R.lastC=c;overlay(c)}
@@ -867,11 +899,11 @@ function judge(R,hand,tap){
     // 플램 꾸밈음 후보: 본음보다 조금 먼저(최대 FLAM_PRE) 친 반대 손
     if(e.g===hand&&e.gt==null){const d=e.t-tap;if(d>=-.05&&d<=FLAM_PRE&&Math.abs(d)<gd){gd=Math.abs(d);gr=e}}
     if(e.st)continue;
-    const dd=Math.abs(tap-e.t);if(dd>R.win)continue;
+    const dd=Math.abs(tap-e.t);if(dd>e.w)continue;
     if(dd<bd){bd=dd;best=e}
     if(e.h===hand&&dd<sd){sd=dd;same=e}
   }
-  if(gr&&(!same||sd>R.good)){
+  if(gr&&(!same||sd>same.gd)){
     gr.gt=tap;
     if(gr.st){ // 본음을 먼저 쳤어요: 거의 동시면 플랫 플램, 아니면 순서가 반대
       if(gr.st==='ok'||gr.why==='flamgrace'){gr.st='bad';gr.why=gr.mt!=null&&tap-gr.mt<FLAM_FLAT?'flamflat':'flamorder';if(gr.rep===R.shown)paint(gr)}
@@ -883,7 +915,7 @@ function judge(R,hand,tap){
   if(!best){R.extra++;padFx(hand,'badf');return}
   best.err=tap-best.t;best.tapH=hand;best.mt=tap;
   if(best.h!==hand){best.st='bad';best.why='hand'}
-  else if(Math.abs(best.err)>R.good){best.st='bad';best.why=best.err<0?'early':'late'}
+  else if(Math.abs(best.err)>best.gd){best.st='bad';best.why=best.err<0?'early':'late'}
   else if(best.g){
     const gap=best.gt==null?null:tap-best.gt;
     if(gap==null){best.st='bad';best.why='flamgrace'}
@@ -1125,6 +1157,9 @@ function updateTempo(){
   if(S.mode==='song'){
     $('#bpmOut').textContent=song.buf?Math.round(song.bpm*song.rate):'—';
     $('#bpmUnit').textContent=`BPM · ${Math.round(song.rate*100)}%`;
+  }else if(S.mode==='kit'&&cur.pattern&&cur.pattern.kind==='kit'){
+    // 악보 템포는 첫 마디 기준. 중간에 템포가 바뀌는 곡은 같은 비율로 함께 빨라지거나 느려져요
+    $('#bpmOut').textContent=S.kitBpm;$('#bpmUnit').textContent=`BPM · ${Math.round(S.kitBpm/cur.pattern.song.bpm*100)}%`;
   }else{$('#bpmOut').textContent=S.mode==='kit'?S.kitBpm:S.bpm;$('#bpmUnit').textContent='BPM'}
 }
 const bump=d=>{
