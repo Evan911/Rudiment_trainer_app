@@ -668,6 +668,7 @@ let latFix=0;
 function hideResult(){$('#result').hidden=true}
 $('#result').addEventListener('click',e=>{
   const a=e.target.closest('[data-act]');if(!a)return;
+  if(a.dataset.act==='calib'){startCalib();return}
   if(a.dataset.act==='fixlat'){S.lat=clamp(S.lat+latFix,-.05,.3);store.set('lat',S.lat);latFix=0;a.remove();toast(`지연 보정을 ${Math.round(S.lat*1000)}ms로 바꿨어요`)}
   else if(a.dataset.act==='close'){hideResult();clearPaint()}
   else if(a.dataset.act==='new'){setPattern(patternForMode())}
@@ -675,19 +676,64 @@ $('#result').addEventListener('click',e=>{
 });
 
 /* ---------- 지연 보정 ---------- */
+// 4분 → 8분 → 셋잇단 → 16분, 각 8번씩. 단계 사이에는 준비 마디 하나.
+const CAL_STAGES=[{name:'4분음표',sub:1},{name:'8분음표',sub:2},{name:'셋잇단',sub:3},{name:'16분음표',sub:4}];
+const CAL_BPM=72;
 function startCalib(){
   ensureAudio();finish(false);closeSheet();hideResult();
-  const spb=.6,t0=ctx.currentTime+.4,clicks=[];
-  for(let k=0;k<12;k++){clicks.push(t0+k*spb);playClick(t0+k*spb,k%4===0)}
-  calib={clicks,taps:[]};
-  overlay('클릭 4번을 듣고, 이어지는 8번의 클릭에 맞춰\n아무 패드나 쳐 주세요',true);
-  setTimeout(()=>{
-    const C=calib;calib=null;overlay('');
-    const ds=[];C.taps.forEach(tp=>{let b=null;C.clicks.slice(4).forEach(c=>{const d=tp-c;if(Math.abs(d)<.28&&(b==null||Math.abs(d)<Math.abs(b)))b=d});if(b!=null)ds.push(b)});
-    if(ds.length<4){toast('탭이 부족해요. 다시 해 주세요');return}
-    ds.sort((a,b)=>a-b);S.lat=clamp(ds[Math.floor(ds.length/2)],-.05,.3);store.set('lat',S.lat);
-    toast(`보정 완료 · ${Math.round(S.lat*1000)}ms`);
-  },(.4+12*spb+.5)*1000);
+  const spb=60/CAL_BPM,bar=4*spb,t0=ctx.currentTime+.4;
+  let barIdx=1;
+  const stages=CAL_STAGES.map(s=>{
+    const start=t0+barIdx*bar,targets=[];
+    for(let k=0;k<8;k++)targets.push(start+k*spb/s.sub);
+    const nb=Math.ceil(8/s.sub/4);barIdx+=nb+1;
+    return {...s,start,end:start+nb*bar,targets};
+  });
+  const endT=t0+(barIdx-1)*bar;
+  for(let k=0;k<(barIdx-1)*4;k++)playClick(t0+k*spb,k%4===0);
+  stages.forEach(s=>s.targets.forEach(t=>playHit(t,'R',.2,true)));
+  calib={stages,taps:[],t0,spb,endT,raf:0};
+  const loop=()=>{
+    const C=calib;if(!C)return;C.raf=requestAnimationFrame(loop);
+    const now=ctx.currentTime,s=C.stages.find(x=>now<x.end);
+    lightBeat(now>=C.t0&&now<C.endT?Math.floor((now-C.t0)/C.spb)%4:-1);
+    if(!s){overlay('');return}
+    const i=C.stages.indexOf(s);
+    if(now<s.start){
+      const left=Math.ceil((s.start-now)/C.spb);
+      overlay(`${i+1}/4 단계 · ${s.name}\n가이드 소리에 맞춰 아무 패드나 8번\n\n${left}`,true);
+    }else{
+      const n=C.taps.filter(t=>t>=s.start-.2&&t<s.end).length;
+      overlay(`${i+1}/4 단계 · ${s.name}\n${Math.min(n,8)} / 8`,true);
+    }
+  };
+  loop();
+  setTimeout(finishCalib,(endT-ctx.currentTime+.5)*1000);
+}
+function finishCalib(){
+  const C=calib;if(!C)return;calib=null;cancelAnimationFrame(C.raf);overlay('');lightBeat(-1);
+  const med=a=>{const s=[...a].sort((x,y)=>x-y);return s.length?s[Math.floor(s.length/2)]:null};
+  // 4분음표 단계(넓은 창)로 대략적인 지연을 먼저 구하고, 빠른 리듬은 그만큼 옮긴 위치에서 짝을 지어요
+  let base=0;const per=[];
+  C.stages.forEach((s,i)=>{
+    const w=i===0?.4:C.spb/s.sub*.5,ds=[];
+    C.taps.forEach(tp=>{let b=null;s.targets.forEach(t=>{const d=tp-t-base;if(Math.abs(d)<w&&(b==null||Math.abs(d)<Math.abs(b)))b=d});if(b!=null)ds.push(b+base)});
+    if(i===0&&ds.length)base=med(ds);
+    per.push({name:s.name,ds});
+  });
+  const all=per.flatMap(p=>p.ds);
+  const el=$('#result');
+  if(all.length<12){
+    el.innerHTML=`<div class="res-head">탭이 부족해요</div><p class="note">각 단계에서 가이드 소리에 맞춰 8번씩 쳐 주세요. (${all.length}번 인식)</p>`+
+      `<div class="res-actions"><button class="btn" data-act="close">닫기</button><button class="btn primary" data-act="calib">다시 측정</button></div>`;
+    el.hidden=false;return;
+  }
+  S.lat=clamp(med(all),-.05,.3);store.set('lat',S.lat);
+  const sd=Math.sqrt(all.reduce((s,d)=>s+(d-S.lat)**2,0)/all.length)*1000;
+  el.innerHTML=`<div class="res-top"><div class="res-score">${Math.round(S.lat*1000)}<small>ms</small></div><div><div class="res-head">지연 보정 완료</div><div class="res-sub">${all.length}번 탭 · 흔들림 ±${Math.round(sd)}ms</div></div></div>`+
+    `<ul class="res-list">${per.map(p=>`<li>${p.name} ${p.ds.length?`${Math.round(med(p.ds)*1000)}ms`:'인식 안 됨'} <span class="res-sub">(8번 중 ${Math.min(8,p.ds.length)}번)</span></li>`).join('')}</ul>`+
+    `<div class="res-actions"><button class="btn" data-act="calib">다시 측정</button><button class="btn primary" data-act="close">완료</button></div>`;
+  el.hidden=false;
 }
 
 /* ---------- 시트 ---------- */
@@ -725,7 +771,7 @@ function openSettings(){
     sw('optHint',S.hint,'다음 손 힌트','다음에 칠 패드에 점이 켜져요')+
     sw('optSpeed',S.speedup,'스피드 빌더','정확도 90% 이상이면 다음 연습은 +5 BPM')+
     `<div class="field col"><span>터치 지연 보정 <output id="latOut" style="float:right;font-family:var(--f-latin)">${Math.round(S.lat*1000)}ms</output><small>박자에 맞게 쳤는데도 계속 '늦음'으로 나오면 보정하세요</small></span>`+
-    `<input type="range" id="latRange" min="-50" max="300" step="5" value="${Math.round(S.lat*1000)}" aria-label="지연 보정 값"><button class="btn" id="btnCalib">클릭 듣고 자동 보정</button></div>`;
+    `<input type="range" id="latRange" min="-50" max="300" step="5" value="${Math.round(S.lat*1000)}" aria-label="지연 보정 값"><button class="btn" id="btnCalib">4가지 리듬으로 자동 보정 (약 30초)</button></div>`;
   openSheet('settings',html,b=>{
     b.querySelectorAll('#segReps button').forEach(x=>x.addEventListener('click',()=>{S.reps=+x.dataset.v;store.set('reps',S.reps);b.querySelectorAll('#segReps button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)))}));
     b.querySelectorAll('#segPad button').forEach(x=>x.addEventListener('click',()=>{S.padSound=x.dataset.v;store.set('padSound',S.padSound);b.querySelectorAll('#segPad button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));if(S.padSound!=='off'){ensureAudio();playTap('R')}}));
