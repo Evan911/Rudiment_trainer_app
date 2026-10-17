@@ -1263,7 +1263,7 @@ function ensurePdf(){
   if(!pdfReady)pdfReady=(async()=>{
     await loadScript(PDFJS+'pdf.min.js');
     window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS+'pdf.worker.min.js';
-    await loadScript('pdf-import.js?v=1');
+    await loadScript('pdf-import.js?v=2');
     return window.pdfjsLib;
   })().catch(err=>{pdfReady=null;throw err});
   return pdfReady;
@@ -1278,7 +1278,7 @@ async function importPdf(f){
     const hasNotes=res.song.bars.some(b=>Object.keys(b).some(k=>KIT[k]));
     if(!hasNotes){toast('이 PDF에서 드럼 악보를 찾지 못했어요. 스캔·사진 PDF는 아직 못 읽어요');return}
     if(!res.song.title||res.song.title==='불러온 악보')res.song.title=f.name.replace(/\.[^.]+$/,'');
-    if(loadKit(res.song,true))toast(`${res.measures}마디를 읽었어요${res.warnings.length?` · ${res.warnings.length}곳은 원본과 비교해 주세요`:''}`);
+    if(loadKit(res.song,true))toast(`${res.measures}마디를 읽었어요${res.repeats?` (도돌이표 펼쳐서 ${res.played}마디)`:''}${res.warnings.length?` · ${res.warnings.length}곳은 원본과 비교해 주세요`:''}`);
   }catch(err){overlay('');toast('PDF를 읽지 못했어요: '+(err&&err.message||err))}
 }
 $('#fileKit').addEventListener('change',async e=>{

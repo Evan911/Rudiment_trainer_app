@@ -208,16 +208,35 @@
         const m = near.map(t => t.str).join('').match(/=\s*(\d{2,3})/);
         if (m) tempos.push({ x: g.x, y: g.y, bpm: +m[1] });
       }
+      let prevDrumBottom = -1;
       for (const st of staves) {
         const bl = findBarlines(st, pg.segs);
         const lastBar = bl[bl.length - 1];
-        const bounds = [st.x0, ...bl.filter(x => x > st.x0 + st.sp * 2)];
+        let bounds = [st.x0, ...bl.filter(x => x > st.x0 + st.sp * 2)];
+        // 줄 맨 앞의 도돌이표 시작(|:)은 마디줄이 아니라 첫 마디의 시작: 음자리표만 있는 짧은 칸은 버려요
+        if (bounds.length > 2 && bounds[1] - bounds[0] < st.sp * 9) bounds = bounds.slice(1);
         if (lastBar === undefined || bounds.length < 2) continue;
+        // 도돌이표 점: 마디줄 바로 옆, 가운데 줄 위아래로 한 쌍
+        const mid = (st.top + st.bottom) / 2;
+        const rdots = pg.glyphs.filter(g => g.code === 0x2e && /maestro/i.test(g.font) && !/percussion/i.test(g.font) && Math.abs(Math.abs(g.y - mid) - st.sp / 2) < st.sp * 0.3);
+        const repeatAt = b => {
+          const near = rdots.filter(d => d.x > b - st.sp * 2.5 && d.x < b + st.sp * 1.5);
+          const pair = near.filter(d => near.some(e => e !== d && Math.abs(e.x - d.x) < 0.6 && Math.abs(e.y - d.y) > st.sp * 0.6));
+          if (!pair.length) return null;
+          return pair[0].x > b ? 'start' : 'end';
+        };
         const inStaff = g => g.y > st.top - st.sp * 8 && g.y < st.bottom + st.sp * 6;
         const gl = music.filter(inStaff);
+        // 멜로디·피아노 오선은 건너뛰어요: 드럼 글꼴 음표나 타악기 음자리표가 있는 오선만 드럼
+        const near = gl.filter(g => g.y > st.top - st.sp * 2 && g.y < st.bottom + st.sp * 2);
+        const isDrum = near.some(g => /percussion/i.test(g.font)) || near.some(g => g.code === 0xf08b && g.x < st.x0 + st.sp * 6);
+        if (!isDrum) continue;
+        // 템포 표시는 그 줄(시스템) 맨 위 오선에 붙어 있을 수 있어요: 앞 드럼 오선과 이 오선 사이 전부
+        const sysTop = prevDrumBottom;
+        prevDrumBottom = st.bottom;
         const half = st.sp / 2;
         // 이 오선 바로 위의 템포 표시
-        const stTempos = tempos.filter(t => t.y < st.top && t.y > st.top - st.sp * 9);
+        const stTempos = tempos.filter(t => t.y < st.top && t.y > Math.max(sysTop, st.top - st.sp * 40));
         for (let mi = 0; mi < bounds.length - 1; mi++) {
           const L = bounds[mi], Rb = bounds[mi + 1];
           const within = gl.filter(g => g.x > L + 0.5 && g.x < Rb - 0.5);
@@ -238,7 +257,8 @@
           }
           // 2마디 반복 기호는 마디줄 위에 걸쳐 있어서 양옆 마디에 걸쳐요
           const repOnBar = gl.find(g => REPEAT2.has(g.code) && Math.abs(g.x + 7 - Rb) < st.sp * 3);
-          const meas = { page: pn, heads, accents: [], open: [], tied: [], rep, rep2Right: !!repOnBar, bpm: null, label: null, L, R: Rb };
+          const meas = { page: pn, heads, accents: [], open: [], tied: [], rep, rep2Right: !!repOnBar, bpm: null, label: null, L, R: Rb,
+            repStart: repeatAt(L) === 'start', repEnd: repeatAt(Rb) === 'end' };
           for (const t of stTempos) if (t.x >= L - st.sp * 6 && t.x < Rb - st.sp * 2 && meas.bpm == null) meas.bpm = t.bpm;
           if (mi === 0 && meas.bpm == null) { const t = stTempos.find(tt => tt.x < L + st.sp * 6); if (t) meas.bpm = t.bpm; }
           // 악센트(>)·오픈(o)·닫힘(+)은 음표 위 같은 가로 위치에
@@ -288,12 +308,28 @@
       if (empty && m.rep === 1 && out.length) { out.push({ ...out[out.length - 1], bpm: m.bpm, copied: true }); continue; }
       out.push(m);
     }
+    // 도돌이표 펼치기: 끝(:|)을 처음 만나면 마지막 시작(|:)으로 한 번 돌아가요
+    const played = [];
+    let repFrom = 0;
+    const doneEnds = new Set();
+    for (let i = 0; i < out.length; i++) {
+      const m = out[i];
+      if (m.repStart) repFrom = i;
+      played.push(i);
+      if (m.repEnd && !doneEnds.has(i)) {
+        doneEnds.add(i);
+        for (let k = repFrom; k <= i; k++) played.push(k);
+        repFrom = i + 1;
+      }
+    }
     // 곡 파일로
     let bpm = null, mode = 'hh';
-    const bars = out.map((m, idx) => {
+    const seq = played.map(i => out[i]);
+    const bars = seq.map((m, idx) => {
       const b = {};
       if (m.bpm && m.bpm !== bpm) { b.bpm = m.bpm; bpm = m.bpm; }
       if (m.mode && !m.copied) mode = m.mode;
+      if (idx > 0 && played[idx] <= played[idx - 1]) b.label = `↺ ${played[idx] + 1}마디부터 반복`;
       const hits = m.hits.filter(h => !m.tied.some(t => Math.abs(t.x - h.x) < 3 && Math.abs(t.y - h.y) < 8));
       const grid = bestGrid(hits.map(h => h.p48));
       b.grid = grid;
@@ -315,7 +351,8 @@
       return b;
     });
     if (bars.length && !bars[0].bpm) bars[0].bpm = opts.defaultBpm || 100;
-    return { song: { title: title || '불러온 악보', bpm: bars[0] ? bars[0].bpm : 100, bars }, warnings, measures: out.length };
+    const repeats = played.length - out.length;
+    return { song: { title: title || '불러온 악보', bpm: bars[0] ? bars[0].bpm : 100, bars }, warnings, measures: out.length, played: played.length, repeats, debug: opts.debug ? out : undefined };
   }
 
   const api = { parseDrumPdf };
