@@ -753,6 +753,52 @@ function ensureAudio(){
   if(ctx.state!=='running')ctx.resume();
   if(S.recMode&&recEl&&recEl.paused)recEl.play().catch(()=>{});
 }
+/* 소리 경로 진단: A 웹 오디오(440Hz) → B MediaStream→audio(660Hz) → C 일반 오디오 파일(880Hz)
+   각각 0.4초 삐 소리 3번. 녹화 영상의 주파수만 보면 어느 경로가 녹화에 담겼는지 가려낼 수 있어요. */
+function makeWav(sr,dur,beeps){
+  const n=Math.ceil(sr*dur),buf=new ArrayBuffer(44+n*2),v=new DataView(buf);
+  const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i))};
+  ws(0,'RIFF');v.setUint32(4,36+n*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,1,true);
+  v.setUint32(24,sr,true);v.setUint32(28,sr*2,true);v.setUint16(32,2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,n*2,true);
+  for(let i=0;i<n;i++){
+    const t=i/sr;let s=0;
+    for(const b of beeps){const u=t-b.t;if(u>=0&&u<b.len)s+=.5*Math.min(1,u/.01,(b.len-u)/.01)*Math.sin(2*Math.PI*b.f*u)}
+    v.setInt16(44+i*2,Math.max(-1,Math.min(1,s))*32767,true);
+  }
+  return new Blob([buf],{type:'audio/wav'});
+}
+function runSoundDiag(){
+  ensureAudio();finish(false);closeSheet();hideResult();
+  const T0=ctx.currentTime+1,problems=[];
+  const beep=(dest,t,f)=>{const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.5,t+.01);g.gain.setValueAtTime(.5,t+.39);g.gain.linearRampToValueAtTime(0,t+.4);
+    o.connect(g);g.connect(dest);o.start(t);o.stop(t+.42)};
+  // A: 웹 오디오 기본 출력
+  for(let k=0;k<3;k++)beep(ctx.destination,T0+k*.6,440);
+  // B: 웹 오디오 → MediaStream → <audio> (녹화 모드와 같은 경로)
+  let bEl=null;
+  if(ctx.createMediaStreamDestination){
+    const md=ctx.createMediaStreamDestination();
+    bEl=document.createElement('audio');bEl.setAttribute('playsinline','');bEl.srcObject=md.stream;document.body.appendChild(bEl);
+    bEl.play().catch(e=>problems.push('B 재생 막힘: '+e.name));
+    for(let k=0;k<3;k++)beep(md,T0+3+k*.6,660);
+  }else problems.push('B 지원 안 함');
+  // C: 일반 오디오 파일. 앞에 7초 무음을 넣어 같은 시간표에 맞추고, 지금(터치 안에서) 재생 시작
+  const cEl=new Audio(URL.createObjectURL(makeWav(44100,9,[0,1,2].map(k=>({t:7+k*.6,f:880,len:.4})))));
+  cEl.setAttribute('playsinline','');cEl.play().catch(e=>problems.push('C 재생 막힘: '+e.name));
+  const ua=(navigator.userAgent.match(/(iPhone OS [\d_]+|iPad; CPU OS [\d_]+|Android [\d.]+|Version\/[\d.]+|CriOS\/[\d.]+|Chrome\/[\d.]+)/g)||['알 수 없음']).join(' ');
+  const info=()=>[`기기: ${ua}`,`audioSession: ${navigator.audioSession?navigator.audioSession.type:'지원 안 함'}`,
+    `오디오: ${ctx.state} · ${ctx.sampleRate}Hz · 지연 ${Math.round((ctx.baseLatency||0)*1000)}+${Math.round((ctx.outputLatency||0)*1000)}ms`,
+    `녹화 모드: ${S.recMode?'켬':'끔'}${problems.length?' · '+problems.join(', '):''}`].join('\n');
+  const show=t=>overlay(info()+'\n\n'+t,true);
+  show('곧 시작해요');
+  [['A. 웹 오디오 · 낮은 삐 (440Hz) 3번',0],['B. 녹화 모드 경로 · 중간 삐 (660Hz) 3번',3],['C. 일반 오디오 파일 · 높은 삐 (880Hz) 3번',6]]
+    .forEach(([t,at])=>setTimeout(()=>show(t+'\n지금 들리나요?'),(1+at)*1000-150));
+  setTimeout(()=>{
+    overlay('');if(bEl){bEl.pause();bEl.remove()}cEl.pause();
+    openSheet('diag',head('진단 끝')+`<p class="note" style="font-size:14px;color:var(--ink)">화면 녹화를 멈추고 영상을 보내 주세요.<br>그리고 <b>폰에서 직접 들린 소리</b>를 알려 주세요: A(낮은 삐) · B(중간 삐) · C(높은 삐)</p><pre style="white-space:pre-wrap;font:12px var(--f-latin);background:var(--bg);padding:10px;border-radius:10px;margin:0">${esc(info())}</pre>`);
+  },(1+8.8)*1000);
+}
 // 화면 녹화 모드: 아이폰 화면 녹화는 웹 소리(Web Audio)를 못 담는 경우가 있어서,
 // 소리를 <audio> 요소로 흘려 '미디어 재생'으로 내보내요. 대신 소리가 조금 늦게 나와요(지연 보정 다시 필요)
 let recDest=null,recEl=null;
@@ -1196,6 +1242,7 @@ function openSettings(){
     `<div class="field"><span>패드 소리<small>칠 때 나는 소리. 끄면 박자 클릭만 들려요</small></span><div class="seg" id="segPad">${[['off','끔'],['tick','틱'],['snare','스네어']].map(([v,l])=>`<button data-v="${v}" aria-pressed="${S.padSound===v}">${l}</button>`).join('')}</div></div>`+
     sw('optVibe',S.vibe,'진동','칠 때 짧게 진동 (안드로이드)')+
     sw('optRec',S.recMode,'화면 녹화 모드','아이폰 화면 녹화에 소리가 담기게 해요. 소리가 조금 늦게 나와서, 켜고 끌 때 지연 보정을 다시 해 주세요')+
+    `<div class="field col"><span>소리 경로 진단<small>화면 녹화를 켠 채로 누르세요. 세 가지 경로로 높이가 다른 삐 소리를 내서, 녹화에 어떤 소리가 담기는지 확인해요 (약 10초)</small></span><button class="btn" id="btnSoundDiag">진단 시작</button></div>`+
     sw('optMetro',S.metro,'메트로놈 클릭','시작 전 카운트 4번은 항상 들려요')+
     sw('optGuide',S.guide,'가이드 소리','쳐야 할 음을 앱이 작게 같이 쳐줘요')+
     sw('optHint',S.hint,'다음 손 힌트','다음에 칠 패드에 점이 켜져요')+
@@ -1206,6 +1253,7 @@ function openSettings(){
   openSheet('settings',html,b=>{
     b.querySelectorAll('#segReps button').forEach(x=>x.addEventListener('click',()=>{S.reps=+x.dataset.v;store.set('reps',S.reps);b.querySelectorAll('#segReps button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)))}));
     b.querySelectorAll('#segPad button').forEach(x=>x.addEventListener('click',()=>{S.padSound=x.dataset.v;store.set('padSound',S.padSound);b.querySelectorAll('#segPad button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));if(S.padSound!=='off'){ensureAudio();playTap('R')}}));
+    b.querySelector('#btnSoundDiag').addEventListener('click',runSoundDiag);
     b.querySelector('#optRec').addEventListener('change',e=>{S.recMode=e.target.checked;store.set('recMode',S.recMode);ensureAudio();routeOutput();toast(S.recMode?'녹화 모드를 켰어요. 지연 보정을 다시 해 주세요':'녹화 모드를 껐어요. 지연 보정을 다시 해 주세요')});
     [['optVibe','vibe'],['optMetro','metro'],['optGuide','guide'],['optHint','hint'],['optSpeed','speedup']].forEach(([id,k])=>{
       const el=b.querySelector('#'+id);el.addEventListener('change',()=>{S[k]=el.checked;store.set(k==='guide'?'guideOn':k,S[k]);if(k==='hint'&&!S.hint)setNext(null)});
