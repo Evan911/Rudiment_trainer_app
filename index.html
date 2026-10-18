@@ -288,7 +288,7 @@ const S={mode:'rudiment',bpm:store.get('bpm',80),reps:store.get('reps',2),
   speedup:store.get('speedup',false),
   // 치는 자세마다 지연이 달라서 보정값을 따로 저장해요: thumb(폰 들고 엄지) / finger(폰 눕혀서 검지)
   posture:store.get('posture','thumb'),lat:0.04,
-  padSound:store.get('padSound','off'),vibe:store.get('vibe',true)};
+  padSound:store.get('padSound','off'),vibe:store.get('vibe',true),recMode:store.get('recMode',false)};
 
 const POSTURES={thumb:'엄지 (폰 들고)',finger:'검지 (폰 눕혀서)'};
 const isCalibrated=()=>store.get('cal.'+S.posture,false);
@@ -743,7 +743,7 @@ function ensureAudio(){
     ctx=new AC({latencyHint:'interactive'});
     // 전화·알림·녹화 시작 등으로 소리가 끊기면(interrupted) 다음 터치 때 다시 살려요
     ctx.addEventListener('statechange',()=>{if(ctx.state==='interrupted'&&run)toast('소리가 잠시 끊겼어요. 화면을 한 번 누르면 다시 나요')});
-    master=ctx.createGain();master.gain.value=0.9;master.connect(ctx.destination);
+    master=ctx.createGain();master.gain.value=0.9;routeOutput();
     songGain=ctx.createGain();songGain.gain.value=0.85;songGain.connect(master);
     noiseBuf=ctx.createBuffer(1,Math.floor(ctx.sampleRate*.3),ctx.sampleRate);
     const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
@@ -751,6 +751,25 @@ function ensureAudio(){
     prerenderTaps();
   }
   if(ctx.state!=='running')ctx.resume();
+  if(S.recMode&&recEl&&recEl.paused)recEl.play().catch(()=>{});
+}
+// 화면 녹화 모드: 아이폰 화면 녹화는 웹 소리(Web Audio)를 못 담는 경우가 있어서,
+// 소리를 <audio> 요소로 흘려 '미디어 재생'으로 내보내요. 대신 소리가 조금 늦게 나와요(지연 보정 다시 필요)
+let recDest=null,recEl=null;
+function routeOutput(){
+  if(!ctx)return;
+  try{master.disconnect()}catch(e){}
+  if(S.recMode&&ctx.createMediaStreamDestination){
+    if(!recDest){
+      recDest=ctx.createMediaStreamDestination();
+      recEl=document.createElement('audio');recEl.setAttribute('playsinline','');recEl.autoplay=true;recEl.srcObject=recDest.stream;
+      document.body.appendChild(recEl);
+    }
+    master.connect(recDest);recEl.play().catch(()=>{});
+  }else{
+    master.connect(ctx.destination);
+    if(recEl)recEl.pause();
+  }
 }
 const pans={},tapBuf={};
 function makePan(v){if(ctx.createStereoPanner){const p=ctx.createStereoPanner();p.pan.value=v;p.connect(master);return p}return master}
@@ -1176,6 +1195,7 @@ function openSettings(){
     `<div class="field"><span>반복<small>노래 모드에서는 곡 끝까지</small></span><div class="seg" id="segReps">${[1,2,4,8,0].map(v=>`<button data-v="${v}" aria-pressed="${S.reps===v}">${v||'∞'}</button>`).join('')}</div></div>`+
     `<div class="field"><span>패드 소리<small>칠 때 나는 소리. 끄면 박자 클릭만 들려요</small></span><div class="seg" id="segPad">${[['off','끔'],['tick','틱'],['snare','스네어']].map(([v,l])=>`<button data-v="${v}" aria-pressed="${S.padSound===v}">${l}</button>`).join('')}</div></div>`+
     sw('optVibe',S.vibe,'진동','칠 때 짧게 진동 (안드로이드)')+
+    sw('optRec',S.recMode,'화면 녹화 모드','아이폰 화면 녹화에 소리가 담기게 해요. 소리가 조금 늦게 나와서, 켜고 끌 때 지연 보정을 다시 해 주세요')+
     sw('optMetro',S.metro,'메트로놈 클릭','시작 전 카운트 4번은 항상 들려요')+
     sw('optGuide',S.guide,'가이드 소리','쳐야 할 음을 앱이 작게 같이 쳐줘요')+
     sw('optHint',S.hint,'다음 손 힌트','다음에 칠 패드에 점이 켜져요')+
@@ -1186,6 +1206,7 @@ function openSettings(){
   openSheet('settings',html,b=>{
     b.querySelectorAll('#segReps button').forEach(x=>x.addEventListener('click',()=>{S.reps=+x.dataset.v;store.set('reps',S.reps);b.querySelectorAll('#segReps button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)))}));
     b.querySelectorAll('#segPad button').forEach(x=>x.addEventListener('click',()=>{S.padSound=x.dataset.v;store.set('padSound',S.padSound);b.querySelectorAll('#segPad button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));if(S.padSound!=='off'){ensureAudio();playTap('R')}}));
+    b.querySelector('#optRec').addEventListener('change',e=>{S.recMode=e.target.checked;store.set('recMode',S.recMode);ensureAudio();routeOutput();toast(S.recMode?'녹화 모드를 켰어요. 지연 보정을 다시 해 주세요':'녹화 모드를 껐어요. 지연 보정을 다시 해 주세요')});
     [['optVibe','vibe'],['optMetro','metro'],['optGuide','guide'],['optHint','hint'],['optSpeed','speedup']].forEach(([id,k])=>{
       const el=b.querySelector('#'+id);el.addEventListener('change',()=>{S[k]=el.checked;store.set(k==='guide'?'guideOn':k,S[k]);if(k==='hint'&&!S.hint)setNext(null)});
     });
