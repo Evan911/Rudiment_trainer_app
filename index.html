@@ -236,6 +236,9 @@ input[type=range]{accent-color:var(--signal);width:100%}
       <button class="icon" id="btnNew" aria-label="새 패턴 만들기" hidden>
         <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M16 10a6 6 0 1 1-1.8-4.3M16 3.5v3.2h-3.2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
+      <button class="icon" id="btnShare" aria-label="이 패턴 공유하기" hidden style="margin-left:0">
+        <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><g stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M10 12.5V3M6.5 6.5L10 3l3.5 3.5"/><path d="M5 9.5H4.5v7h11v-7H15"/></g></svg>
+      </button>
     </div>
     <div class="meta" id="patMeta"></div>
     <button class="songbar" id="songBar" hidden>
@@ -302,27 +305,54 @@ const ICON={
 
 /* ---------- 패턴 ---------- */
 // cyc: 한 사이클의 스티킹('-'는 쉼표), sub: 한 박을 몇 칸으로 나누는지
+// 루디먼트: 미국 타악기협회(PAS) 표준 40가지 중 패드 두 개로 칠 수 있는 것 위주
+// cyc: 한 사이클의 스티킹('-' 쉼표, 소문자는 바로 뒤 음의 플램 꾸밈음), acc: 악센트 칸, sub: 한 박의 칸 수
 const RUD=[
-  {id:'single8', name:'싱글 스트로크 8분', sub:2, cyc:'RL', acc:[]},
-  {id:'single16',name:'싱글 스트로크 16분',sub:4, cyc:'RL', acc:[]},
-  {id:'double',  name:'더블 스트로크',      sub:4, cyc:'RRLL', acc:[]},
-  {id:'para',    name:'싱글 패러디들',      sub:4, cyc:'RLRRLRLL', acc:[0,4]},
-  {id:'dblpara', name:'더블 패러디들',      sub:3, cyc:'RLRLRRLRLRLL', acc:[0,6]},
-  {id:'pdd',     name:'패러디들디들',       sub:3, cyc:'RLRRLL', acc:[0]},
-  {id:'trip',    name:'셋잇단 싱글',        sub:3, cyc:'RLRLRL', acc:[0,3]},
-  {id:'five',    name:'5스트로크 롤',       sub:4, cyc:'RRLLR---LLRRL---', acc:[4,12]},
-  // 소문자 = 플램 꾸밈음 (바로 뒤 본음보다 살짝 먼저 치는 반대 손)
-  {id:'flam',    name:'플램',               sub:2, cyc:'lRrL', acc:[]},
-  {id:'flamtap', name:'플램 탭',            sub:4, cyc:'lRRrLL', acc:[]},
-  {id:'flamacc', name:'플램 액센트',        sub:3, cyc:'lRLRrLRL', acc:[0,3]},
-  {id:'swiss',   name:'스위스 아미 트리플렛', sub:3, cyc:'lRRLlRRL', acc:[]},
+  {grp:'롤',id:'single8', name:'싱글 스트로크 8분', sub:2, cyc:'RL', acc:[]},
+  {grp:'롤',id:'single16',name:'싱글 스트로크 16분',sub:4, cyc:'RL', acc:[]},
+  {grp:'롤',id:'trip',    name:'셋잇단 싱글',        sub:3, cyc:'RLRLRL', acc:[0,3]},
+  {grp:'롤',id:'single4', name:'싱글 스트로크 포',   sub:3, cyc:'RLRL--', acc:[3]},
+  {grp:'롤',id:'single7', name:'싱글 스트로크 세븐', sub:4, cyc:'RLRLRLR-', acc:[6]},
+  {grp:'롤',id:'double',  name:'더블 스트로크',      sub:4, cyc:'RRLL', acc:[]},
+  {grp:'롤',id:'triple',  name:'트리플 스트로크',    sub:3, cyc:'RRRLLL', acc:[0,3]},
+  {grp:'롤',id:'five',    name:'5스트로크 롤',       sub:4, cyc:'RRLLR---LLRRL---', acc:[4,12]},
+  {grp:'롤',id:'six',     name:'6스트로크 롤',       sub:4, cyc:'RLLRRL--', acc:[0,5]},
+  {grp:'롤',id:'seven',   name:'7스트로크 롤',       sub:4, cyc:'LLRRLLR-', acc:[6]},
+  {grp:'롤',id:'nine',    name:'9스트로크 롤',       sub:4, cyc:'RRLLRRLLR-------', acc:[8]},
+  {grp:'롤',id:'ten',     name:'10스트로크 롤',      sub:4, cyc:'RRLLRRLLR-L-----', acc:[8,10]},
+  {grp:'롤',id:'eleven',  name:'11스트로크 롤',      sub:4, cyc:'RRLLRRLLRRL-----', acc:[10]},
+  {grp:'롤',id:'thirteen',name:'13스트로크 롤',      sub:4, cyc:'RRLLRRLLRRLLR---', acc:[12]},
+  {grp:'패러디들',id:'para',    name:'싱글 패러디들',     sub:4, cyc:'RLRRLRLL', acc:[0,4]},
+  {grp:'패러디들',id:'dblpara', name:'더블 패러디들',     sub:3, cyc:'RLRLRRLRLRLL', acc:[0,6]},
+  {grp:'패러디들',id:'tripara', name:'트리플 패러디들',   sub:4, cyc:'RLRLRLRRLRLRLRLL', acc:[0,8]},
+  {grp:'패러디들',id:'pdd',     name:'패러디들디들',      sub:3, cyc:'RLRRLL', acc:[0]},
+  {grp:'패러디들',id:'revpara', name:'리버스 패러디들',   sub:4, cyc:'RRLRLLRL', acc:[2,6]},
+  {grp:'패러디들',id:'inpara',  name:'인워드 패러디들',   sub:4, cyc:'RLLRLRRL', acc:[0,4]},
+  {grp:'플램',id:'flam',      name:'플램',               sub:2, cyc:'lRrL', acc:[]},
+  {grp:'플램',id:'flamacc',   name:'플램 액센트',        sub:3, cyc:'lRLRrLRL', acc:[0,3]},
+  {grp:'플램',id:'flamtap',   name:'플램 탭',            sub:4, cyc:'lRRrLL', acc:[]},
+  {grp:'플램',id:'invflamtap',name:'인버티드 플램 탭',   sub:4, cyc:'lRLrLR', acc:[]},
+  {grp:'플램',id:'flamacue',  name:'플래머큐',           sub:4, cyc:'lRLRLlR---', acc:[1]},
+  {grp:'플램',id:'flampara',  name:'플램 패러디들',      sub:4, cyc:'lRLRRrLRLL', acc:[0,4]},
+  {grp:'플램',id:'patafla',   name:'파타플라플라',       sub:4, cyc:'lRLRrL', acc:[0,3]},
+  {grp:'플램',id:'swiss',     name:'스위스 아미 트리플렛', sub:3, cyc:'lRRLlRRL', acc:[]},
 ];
+const RUD_GROUPS=['롤','패러디들','플램'];
+// 초견: 잘 알려진 교재들의 연습 원리를 본떠, 한 박짜리 리듬 조각(cell)을 골라 이어 붙여 매번 새로 만들어요
+//  x 침, X 악센트, F 플램, - 쉼표, R/L 손이 정해진 칸 / stick: alt 번갈아, nat 박자 위치(정박 R·엇박 L), cell 조각에 적힌 손
+//  repeat: 두 박짜리 스티킹을 마디 안에서 되풀이 (스틱 컨트롤식)
 const LV=[
-  {id:1,name:'레벨 1',desc:'4분음표',          sub:1,p:.75,stick:'alt'},
-  {id:2,name:'레벨 2',desc:'8분음표',          sub:2,p:.7, stick:'nat'},
-  {id:3,name:'레벨 3',desc:'16분음표',         sub:4,p:.6, stick:'nat'},
-  {id:4,name:'레벨 4',desc:'16분 스티킹 섞기',  sub:4,p:1,  stick:'mix'},
-  {id:5,name:'레벨 5',desc:'셋잇단',           sub:3,p:.7, stick:'alt'},
+  {id:1, name:'레벨 1', desc:'4분음표와 쉼표',             sub:1,stick:'alt', cells:['x','x','x','-']},
+  {id:2, name:'레벨 2', desc:'8분음표',                    sub:2,stick:'nat', cells:['xx','xx','x-','x-']},
+  {id:3, name:'레벨 3', desc:'8분 싱코페이션',             sub:2,stick:'nat', cells:['xx','x-','-x','-x','--']},
+  {id:4, name:'레벨 4', desc:'16분음표 기초',              sub:4,stick:'nat', cells:['xxxx','xxxx','x-x-','x-xx','xx-x']},
+  {id:5, name:'레벨 5', desc:'16분 리듬 조합',             sub:4,stick:'nat', cells:['xxxx','x-xx','xx-x','xxx-','-xxx','x--x','-x-x','x-x-','-xx-']},
+  {id:6, name:'레벨 6', desc:'16분 싱코페이션',            sub:4,stick:'nat', cells:['-x-x','--x-','-xx-','x--x','-x--','---x','x-xx','-xxx','xx-x']},
+  {id:7, name:'레벨 7', desc:'스티킹 변형 (스틱 컨트롤식)', sub:4,stick:'cell',repeat:true, cells:['RLRL','RRLL','RLRR','LRLL','RLLR','LRRL','RRLR','LLRL','RLLL','LRRR']},
+  {id:8, name:'레벨 8', desc:'악센트 읽기',                sub:4,stick:'alt', cells:['Xxxx','xXxx','xxXx','xxxX','XxXx','xXxX','XxxX','xXXx']},
+  {id:9, name:'레벨 9', desc:'셋잇단',                     sub:3,stick:'alt', cells:['xxx','xxx','x-x','xx-','-xx','x--']},
+  {id:10,name:'레벨 10',desc:'셋잇단 스티킹',              sub:3,stick:'cell',repeat:true, cells:['RLR','LRL','RRL','LLR','RLL','LRR']},
+  {id:11,name:'레벨 11',desc:'플램 섞기',                  sub:2,stick:'alt', cells:['xx','Fx','xF','F-','FF']},
 ];
 const SUBNAME={1:'4분음표',2:'8분음표',3:'셋잇단',4:'16분음표'};
 const BARS=2;
@@ -339,22 +369,20 @@ function buildRud(id){
   return {name:r.name,sub:r.sub,bars:BARS,slots};
 }
 function genPattern(id){
-  const L=LV.find(x=>x.id===id)||LV[0],sub=L.sub,n=BARS*4*sub;
+  const L=LV.find(x=>x.id===id)||LV[0],sub=L.sub,beats=BARS*4,pick=a=>a[Math.floor(Math.random()*a.length)];
   let slots=[];
-  for(let t=0;t<40;t++){
+  for(let t=0;t<30;t++){
+    const seq=[];
+    if(L.repeat)for(let b=0;b<BARS;b++){const A=pick(L.cells),B=pick(L.cells);seq.push(A,B,A,B)}
+    else{for(let b=0;b<beats;b++)seq.push(pick(L.cells));if(seq[0][0]==='-'&&Math.random()<.7)seq[0]=L.cells[0]} // 첫 박은 대개 치고 시작
     slots=[];
-    for(let j=0;j<n;j++){const p=L.p*(j%sub===0?1.15:0.92);slots.push(Math.random()<p?{h:'R',acc:false}:null)}
-    if(!slots[0])slots[0]={h:'R',acc:false};
-    const c=slots.filter(Boolean).length;
-    if(L.p>=1||(c>=n*L.p*0.85&&c<n))break;
+    seq.forEach(c=>{for(const ch of c)slots.push(ch==='-'?null:{h:/[RL]/.test(ch)?ch:'R',acc:ch==='X',f:ch==='F'})});
+    if(slots.filter(Boolean).length>=beats)break; // 너무 비면 다시
   }
-  if(L.stick==='alt'){let h='R';slots.forEach(s=>{if(s){s.h=h;h=h==='R'?'L':'R'}})}
+  if(L.stick==='alt'||(L.stick==='nat'&&sub===1)){let h='R';slots.forEach(s=>{if(s){s.h=h;h=h==='R'?'L':'R'}})}
   else if(L.stick==='nat'){slots.forEach((s,j)=>{if(s)s.h=(j%sub)%2===0?'R':'L'})}
-  else{
-    const G=['RLRL','RRLL','RLRR','RLLR','LRLL','RRLR','LRRL','LLRR','RLRL'];
-    for(let b=0;b<BARS*4;b++){const g=G[Math.floor(Math.random()*G.length)];for(let k=0;k<4;k++)slots[b*4+k]={h:g[k],acc:k===0&&Math.random()<.3}}
-  }
-  return {name:`초견 ${L.name}`,sub,bars:BARS,slots,gen:true};
+  slots.forEach(s=>{if(s){if(s.f)s.g=s.h==='R'?'L':'R';delete s.f}});
+  return {name:`초견 ${L.name}`,sub,bars:BARS,slots,gen:true,lvl:L.id};
 }
 
 /* ---------- 드럼 세트 악보 (곡 파일) ---------- */
@@ -1126,7 +1154,7 @@ const head=t=>`<div class="sheet-head"><h2>${t}</h2><button class="txt" data-clo
 
 function openPicker(){
   let groups,current;
-  if(S.mode==='rudiment'){groups=[{items:RUD.map(r=>({v:r.id,l:r.name,s:stickPreview(r)}))}];current=S.rud}
+  if(S.mode==='rudiment'){groups=RUD_GROUPS.map(g=>({label:g,items:RUD.filter(r=>r.grp===g).map(r=>({v:r.id,l:r.name,s:stickPreview(r)}))}));current=S.rud}
   else if(S.mode==='read'){groups=[{items:LV.map(l=>({v:String(l.id),l:l.name,s:l.desc}))}];current=String(S.level)}
   else{groups=[{label:'루디먼트',items:RUD.map(r=>({v:'r:'+r.id,l:r.name,s:stickPreview(r)}))},{label:'초견 자동 생성',items:LV.map(l=>({v:'l:'+l.id,l:l.name,s:l.desc}))}];current=S.songPat}
   const html=head(S.mode==='read'?'초견 레벨':'패턴')+groups.map(g=>(g.label?`<div class="grp">${g.label}</div>`:'')+
@@ -1272,6 +1300,7 @@ function applyMode(){
   document.querySelectorAll('.modes button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.mode===m)));
   $('#songBar').hidden=m!=='song';
   $('#btnNew').hidden=!(m==='read'||(m==='song'&&S.songPat.startsWith('l:')));
+  $('#btnShare').hidden=m!=='read';
   updateTempo();
 }
 function changeMode(m){finish(false);closeSheet();S.mode=m;applyMode();setPattern(patternForMode())}
@@ -1506,9 +1535,53 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden)finish(fals
 let lastW=0;
 new ResizeObserver(()=>{const w=$('#staffWrap').clientWidth;if(Math.abs(w-lastW)>2){lastW=w;renderStaff();if(run)run.shown=-2}}).observe($('#staffWrap'));
 
+/* ---------- 초견 패턴 공유 ----------
+   지금 보고 있는 초견을 링크 하나로: 링크의 # 뒤에 패턴(칸마다 손·악센트·플램)과 템포를 담아요.
+   서버에 아무것도 저장하지 않고, 링크를 연 친구의 폰에서 같은 악보로 열려요. */
+function encodeShare(P){
+  // 칸: '' 쉼표, 'R'/'L' 침, 뒤에 '>' 악센트, 앞에 소문자 l/r 플램 꾸밈음
+  const cells=P.slots.map(s=>s?(s.g?s.g.toLowerCase():'')+s.h+(s.acc?'>':''):'');
+  const json=JSON.stringify({v:1,l:P.lvl||0,s:P.sub,b:P.bars,t:S.bpm,p:cells.join(',')});
+  return btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function decodeShare(code){
+  const json=decodeURIComponent(escape(atob(code.replace(/-/g,'+').replace(/_/g,'/'))));
+  const d=JSON.parse(json);
+  if(d.v!==1||![1,2,3,4].includes(d.s)||![1,2].includes(d.b))throw new Error('지원하지 않는 링크');
+  const cells=String(d.p).split(',');
+  if(cells.length!==d.s*4*d.b)throw new Error('패턴 길이가 맞지 않아요');
+  const slots=cells.map(c=>{
+    const m=c.match(/^([lr]?)([RL])(>?)$/);if(!c)return null;if(!m)throw new Error('알 수 없는 칸');
+    return {h:m[2],acc:!!m[3],g:m[1]?m[1].toUpperCase():undefined};
+  });
+  const L=LV.find(x=>x.id===d.l);
+  return {P:{name:`공유 받은 초견${L?' · '+L.desc:''}`,sub:d.s,bars:d.b,slots,gen:true,lvl:d.l||S.level,shared:true},bpm:clamp(+d.t||80,30,220)};
+}
+async function sharePattern(){
+  const P=cur.pattern;if(!P||!P.slots)return;
+  const url=location.origin+location.pathname+'#share='+encodeShare(P);
+  const L=LV.find(x=>x.id===P.lvl),text=`루디트레이너 초견 같이 쳐봐요 · ${L?L.desc:'초견'} · ${S.bpm} BPM`;
+  if(navigator.share){try{await navigator.share({title:'루디트레이너 초견',text,url});return}catch(e){if(e&&e.name==='AbortError')return}}
+  try{await navigator.clipboard.writeText(url);toast('공유 링크를 복사했어요. 친구에게 붙여넣어 보내세요')}
+  catch(e){openSheet('share',head('공유 링크')+`<p class="note">아래 링크를 길게 눌러 복사해 보내세요.</p><textarea readonly style="width:100%;height:96px;font:12px var(--f-latin);border:1px solid var(--rule);border-radius:10px;padding:8px;background:var(--bg);color:var(--ink)">${esc(url)}</textarea>`,b=>{const t=b.querySelector('textarea');t.focus();t.select()})}
+}
+$('#btnShare').addEventListener('click',sharePattern);
+function openSharedFromLink(){
+  const m=location.hash.match(/^#share=([A-Za-z0-9_-]+)$/);if(!m)return false;
+  try{
+    const {P,bpm}=decodeShare(m[1]);
+    S.mode='read';S.bpm=bpm;if(P.lvl)S.level=P.lvl;applyMode();setPattern(P);
+    toast('친구가 공유한 초견이에요. 시작을 눌러 쳐보세요');
+  }catch(err){toast('공유 링크를 열 수 없어요: '+err.message)}
+  try{history.replaceState(null,'',location.pathname)}catch(e){}
+  return true;
+}
+window.addEventListener('hashchange',()=>{if(openSharedFromLink())finish(false)});
+
 setPlayBtn(false);songUI();applyMode();setPattern(patternForMode());
+openSharedFromLink();
 // 로컬 개발 서버에서만: 판정 로직을 정확한 시각으로 시험하기 위한 연결
-if(location.hostname==='localhost')window.__rudi={judge,buildRud,setPattern,cur};
+if(location.hostname==='localhost')window.__rudi={judge,buildRud,setPattern,cur,encodeShare,genPattern,LV};
 })();
 </script>
 </body>
