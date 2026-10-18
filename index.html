@@ -1053,7 +1053,8 @@ $('#result').addEventListener('click',e=>{
 
 /* ---------- 지연 보정 ---------- */
 // 4분 → 8분 → 셋잇단 → 16분, 각 8번씩. 단계 사이에는 준비 마디 하나.
-const CAL_STAGES=[{name:'4분음표',sub:1},{name:'8분음표',sub:2},{name:'셋잇단',sub:3},{name:'16분음표',sub:4}];
+// 단계마다 두 마디씩: 4분 8번, 8분 16번, 셋잇단 24번, 16분 32번
+const CAL_STAGES=[{name:'4분음표',sub:1,n:8},{name:'8분음표',sub:2,n:16},{name:'셋잇단',sub:3,n:24},{name:'16분음표',sub:4,n:32}];
 const CAL_BPM=72;
 function startCalib(){
   ensureAudio();finish(false);closeSheet();hideResult();
@@ -1061,8 +1062,8 @@ function startCalib(){
   let barIdx=1;
   const stages=CAL_STAGES.map(s=>{
     const start=t0+barIdx*bar,targets=[];
-    for(let k=0;k<8;k++)targets.push(start+k*spb/s.sub);
-    const nb=Math.ceil(8/s.sub/4);barIdx+=nb+1;
+    for(let k=0;k<s.n;k++)targets.push(start+k*spb/s.sub);
+    const nb=Math.ceil(s.n/s.sub/4);barIdx+=nb+1;
     return {...s,start,end:start+nb*bar,targets};
   });
   const endT=t0+(barIdx-1)*bar;
@@ -1077,10 +1078,10 @@ function startCalib(){
     const i=C.stages.indexOf(s);
     if(now<s.start){
       const left=Math.ceil((s.start-now)/C.spb);
-      overlay(`${POSTURES[S.posture]} 자세로 측정\n${i+1}/4 단계 · ${s.name}\n가이드 소리에 맞춰 아무 패드나 8번\n\n${left}`,true);
+      overlay(`${POSTURES[S.posture]} 자세로 측정\n${i+1}/4 단계 · ${s.name}\n가이드 소리에 맞춰 아무 패드나 ${s.n}번\n\n${left}`,true);
     }else{
       const n=C.taps.filter(t=>t>=s.start-.2&&t<s.end).length;
-      overlay(`${i+1}/4 단계 · ${s.name}\n${Math.min(n,8)} / 8`,true);
+      overlay(`${i+1}/4 단계 · ${s.name}\n${Math.min(n,s.n)} / ${s.n}`,true);
     }
   };
   loop();
@@ -1095,19 +1096,19 @@ function finishCalib(){
     const w=i===0?.4:C.spb/s.sub*.5,ds=[];
     C.taps.forEach(tp=>{let b=null;s.targets.forEach(t=>{const d=tp-t-base;if(Math.abs(d)<w&&(b==null||Math.abs(d)<Math.abs(b)))b=d});if(b!=null)ds.push(b+base)});
     if(i===0&&ds.length)base=med(ds);
-    per.push({name:s.name,ds});
+    per.push({name:s.name,n:s.n,ds});
   });
   const all=per.flatMap(p=>p.ds);
   const el=$('#result');
-  if(all.length<12){
-    el.innerHTML=`<div class="res-head">탭이 부족해요</div><p class="note">각 단계에서 가이드 소리에 맞춰 8번씩 쳐 주세요. (${all.length}번 인식)</p>`+
+  if(all.length<30){
+    el.innerHTML=`<div class="res-head">탭이 부족해요</div><p class="note">가이드 소리에 맞춰 4분 8번, 8분 16번, 셋잇단 24번, 16분 32번 쳐 주세요. (${all.length}번 인식)</p>`+
       `<div class="res-actions"><button class="btn" data-act="close">닫기</button><button class="btn primary" data-act="calib">다시 측정</button></div>`;
     el.hidden=false;return;
   }
   setLat(med(all),true);
   const sd=Math.sqrt(all.reduce((s,d)=>s+(d-S.lat)**2,0)/all.length)*1000;
   el.innerHTML=`<div class="res-top"><div class="res-score">${Math.round(S.lat*1000)}<small>ms</small></div><div><div class="res-head">지연 보정 완료</div><div class="res-sub">${POSTURES[S.posture]} 자세로 저장 · ${all.length}번 탭 · 흔들림 ±${Math.round(sd)}ms</div></div></div>`+
-    `<ul class="res-list">${per.map(p=>`<li>${p.name} ${p.ds.length?`${Math.round(med(p.ds)*1000)}ms`:'인식 안 됨'} <span class="res-sub">(8번 중 ${Math.min(8,p.ds.length)}번)</span></li>`).join('')}</ul>`+
+    `<ul class="res-list">${per.map(p=>`<li>${p.name} ${p.ds.length?`${Math.round(med(p.ds)*1000)}ms`:'인식 안 됨'} <span class="res-sub">(${p.n}번 중 ${Math.min(p.n,p.ds.length)}번)</span></li>`).join('')}</ul>`+
     `<div class="res-actions"><button class="btn" data-act="calib">다시 측정</button><button class="btn primary" data-act="close">완료</button></div>`;
   el.hidden=false;
 }
@@ -1148,7 +1149,7 @@ function openSettings(){
     sw('optSpeed',S.speedup,'스피드 빌더','정확도 90% 이상이면 다음 연습은 +5 BPM')+
     `<div class="field col"><span>터치 지연 보정 <output id="latOut" style="float:right;font-family:var(--f-latin)">${Math.round(S.lat*1000)}ms</output><small>치는 자세마다 따로 저장돼요 · <span id="latState">${isCalibrated()?'이 자세는 보정됨':'이 자세는 아직 보정 안 함'}</span></small></span>`+
     `<div class="seg" id="segPosture" style="align-self:flex-start">${Object.entries(POSTURES).map(([v,l])=>`<button data-v="${v}" aria-pressed="${S.posture===v}">${l}</button>`).join('')}</div>`+
-    `<input type="range" id="latRange" min="-50" max="300" step="5" value="${Math.round(S.lat*1000)}" aria-label="지연 보정 값"><button class="btn" id="btnCalib">4가지 리듬으로 자동 보정 (약 30초)</button></div>`;
+    `<input type="range" id="latRange" min="-50" max="300" step="5" value="${Math.round(S.lat*1000)}" aria-label="지연 보정 값"><button class="btn" id="btnCalib">4가지 리듬으로 자동 보정 (약 45초)</button></div>`;
   openSheet('settings',html,b=>{
     b.querySelectorAll('#segReps button').forEach(x=>x.addEventListener('click',()=>{S.reps=+x.dataset.v;store.set('reps',S.reps);b.querySelectorAll('#segReps button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)))}));
     b.querySelectorAll('#segPad button').forEach(x=>x.addEventListener('click',()=>{S.padSound=x.dataset.v;store.set('padSound',S.padSound);b.querySelectorAll('#segPad button').forEach(y=>y.setAttribute('aria-pressed',String(y===x)));if(S.padSound!=='off'){ensureAudio();playTap('R')}}));
@@ -1479,7 +1480,7 @@ function showCalNotice(){
   const el=$('#result');
   const render=()=>{
     el.innerHTML=`<div class="res-head">시작 전에 지연 보정을 추천해요</div>`+
-      `<p class="note" style="font-size:13px;color:var(--ink)">폰마다, 그리고 <b>치는 자세</b>마다 터치가 인식되는 시간이 달라요. 엄지로 치는지, 폰을 눕혀 놓고 검지로 치는지에 따라 차이가 커요. 30초면 끝나고, 자세별로 저장돼요.</p>`+
+      `<p class="note" style="font-size:13px;color:var(--ink)">폰마다, 그리고 <b>치는 자세</b>마다 터치가 인식되는 시간이 달라요. 엄지로 치는지, 폰을 눕혀 놓고 검지로 치는지에 따라 차이가 커요. 45초면 끝나고, 자세별로 저장돼요.</p>`+
       `<div class="seg" style="align-self:flex-start">${Object.entries(POSTURES).map(([v,l])=>`<button data-posture="${v}" aria-pressed="${S.posture===v}">${l}</button>`).join('')}</div>`+
       `<div class="res-actions"><button class="btn" data-act="skipcal">그냥 시작</button><button class="btn primary" data-act="calib">보정하기</button></div>`;
     el.querySelectorAll('[data-posture]').forEach(x=>x.addEventListener('click',()=>{
